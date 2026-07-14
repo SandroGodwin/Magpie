@@ -20,6 +20,12 @@
     <EnableFSR2ZeroMV>false</EnableFSR2ZeroMV>
     <FSR2SdkDir></FSR2SdkDir>
     <FSR2RuntimeDir></FSR2RuntimeDir>
+    <!-- FSR 3.1 upscaler-only through D3D11/D3D12 shared resources. -->
+    <EnableFSR3ZeroMV>false</EnableFSR3ZeroMV>
+    <FSR3SdkDir></FSR3SdkDir>
+    <!-- Cross-vendor XeSS-SR through D3D11/D3D12 shared resources. -->
+    <EnableXeSSZeroMV>false</EnableXeSSZeroMV>
+    <XeSSSdkDir></XeSSSdkDir>
     <!-- NVIDIA Video Super Resolution same-resolution denoise modes (8-11). -->
     <EnableRTXVideoDenoise>false</EnableRTXVideoDenoise>
     <VFXSdkDir></VFXSdkDir>

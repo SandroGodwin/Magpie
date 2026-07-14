@@ -5,19 +5,21 @@
 
 ## 项目概况
 
-本分支为 Magpie 增加了三组可选的 D3D11 原生后端：
+本分支为 Magpie 增加了四组可选实验后端：
 
 - NVIDIA DLSS-SR：Zero-MV、伪 jitter、颜色光流。
 - AMD FSR 2.2.1：Zero-MV、颜色光流。
 - NVIDIA RTX Video：同分辨率降噪和实际 VSR 放大。
+- Intel XeSS 3.0.1：通过 D3D11/D3D12 共享资源运行通用 D3D12 DP4a Zero-MV 路径。
 
 所有新增功能均通过构建开关控制，默认关闭。
 
 ## 目录说明
 
-- 仓库根目录：主项目源码，后续开发和构建均以此为准。
-- `Magpie-RTXVideo-Experimental-x64-20260713`：本地曾整理的 x64 内部测试版，未随本仓库公开。
-- `DLSS-main`、`FSR2-DX11-source`、`FSR2-v2.2.1`、`NVIDIA-Maxine-VFX-SDK-current`、`nvidia-vfx-python`：编译或整理运行库时使用的外部 SDK/支持项目，不属于 Magpie 主源码。
+- `source`：主项目源码，后续开发和构建均以此为准。
+- `release\Magpie-Experimental-x64`：持续覆盖更新的便携分发目录。
+- `release\Magpie-Experimental-x64.zip`：持续覆盖更新的同名测试包。
+- `dependencies`：集中保存 DLSS、FSR2、XeSS、NVIDIA VFX SDK/运行库及 OptiScaler 参考项目，不属于 Magpie 主源码。
 
 外部 SDK 无需整体复制进分发包，但分发目录中的 DLSS、FSR2、RTX Video、CUDA/TensorRT 及 WinUI DLL 是运行依赖，不能仅因其来自 SDK 而删除。公开发布这些二进制前仍需核对各自许可证。
 
@@ -29,6 +31,7 @@
 - DLSS、FSR2 和 RTX Video 均已接入 Magpie 的 Effect 管线。
 - RTX Video 使用 D3D11/CUDA GPU 互操作，无 CPU 帧回读。
 - RTX Video 降噪及 VSR 放大已在 RTX 5070 Ti 上成功加载和运行。
+- XeSS 已完成 Release x64 编译；NVIDIA/AMD/Intel 实机兼容性和画质仍待测试。
 
 主要限制：
 
@@ -51,6 +54,16 @@ FSR2：
 - `FSR2\FSR2_ZeroMV`
 - `FSR2\FSR2_OpticalFlow`
 
+FSR3（仅上采样，不含帧生成）：
+
+- `FSR3\FSR3_ZeroMV`
+- `FSR3\FSR3_OpticalFlow`
+
+XeSS：
+
+- `XeSS\XeSS_ZeroMV`
+- `XeSS\XeSS_OpticalFlow`
+
 RTX Video：
 
 - `RTXVideo\RTXVideo_Denoise_Low/Medium/High/Ultra`
@@ -64,6 +77,7 @@ VSR 效果建议使用 `Fit` 缩放类型。Denoise 保持输入尺寸不变。
 
 - `src/Magpie.Core/DLSSZeroMVUpscaler.*`
 - `src/Magpie.Core/FSR2ZeroMVUpscaler.*`
+- `src/Magpie.Core/XeSSZeroMVUpscaler.*`
 - `src/Magpie.Core/HalfResOpticalFlow.*`
 - `src/Magpie.Core/RTXVideoDenoiser.*`
 
@@ -76,7 +90,7 @@ VSR 效果建议使用 `Fit` 缩放类型。Denoise 保持输入尺寸不变。
 - `src/Magpie/Magpie.vcxproj`
 - `src/Effects/Effects.vcxproj`
 
-Effect 文件位于 `src/Effects/DLSS`、`FSR2` 和 `RTXVideo`。
+Effect 文件位于 `src/Effects/DLSS`、`FSR2`、`XeSS` 和 `RTXVideo`。
 
 `RTXVideoDenoiser` 目前同时负责降噪和放大，合并前建议重命名。Renderer 现在按 Effect 名称分派原生后端，长期建议改成显式元数据。
 
@@ -92,7 +106,7 @@ msbuild Magpie.slnx /m /nr:false /v:minimal /p:Configuration=Release /p:Platform
 
 本机 SDK 路径应写在 `src/BuildOptions.props.user`。该文件不应提交公共仓库，应改为示例配置或 CI 参数。
 
-保留的外部依赖：`DLSS-main`、`FSR2-DX11-source`、`FSR2-v2.2.1`、`NVIDIA-Maxine-VFX-SDK-current`、`nvidia-vfx-python`。
+保留的外部依赖统一位于工作区的 `dependencies` 目录。
 
 ## 开源注意事项
 
@@ -112,8 +126,10 @@ Magpie 使用 GPLv3。建议先在官方仓库的个人 Fork 中建立实验分�
 
 ## 输出
 
-- 源码：仓库根目录
+- 源码：`source`
 - Release 输出：`bin/x64/Release/Magpie.exe`
-- 本地实验分发包未随公共仓库发布。
+- 本地实验分发包：`release\Magpie-Experimental-x64.zip`
+- 自动构建及更新：`source\scripts\Build-Release.ps1`
+- 工作区快捷入口：`Update-Release.ps1`
 
 本仓库由 Magpie 官方仓库 Fork，实验修改保存在独立分支，以保留清晰的上游提交历史。

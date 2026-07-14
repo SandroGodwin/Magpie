@@ -25,29 +25,90 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 
 - NVIDIA DLSS Super Resolution：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
 - AMD FidelityFX Super Resolution 2.2.1：零运动向量或 50% 分辨率颜色光流。
+- AMD FidelityFX Super Resolution 3.1.5 上采样（不含帧生成）：通过 D3D11/D3D12 互操作提供零运动向量或 50% 分辨率颜色光流模式。
+- Intel XeSS 3.0.1 Super Resolution：通过 D3D11/D3D12 互操作提供零运动向量或 50% 分辨率颜色光流模式。
 - NVIDIA VideoSuperRes：同分辨率降噪和 VSR 放大。
 
 这些接入无法获得游戏引擎提供的真实深度、运动向量、曝光、反应遮罩和投影 jitter，因此可能出现拖影、细节不稳定，效果也可能弱于游戏原生接入。它们属于研究原型，不能视为原生 DLSS 或 FSR 的替代品。
-
-RTX Video VSR 已在开发者的 Windows 11 测试机上运行。另一台 Windows 10 测试机在创建 VideoSuperRes 时返回了 `The requested feature is not yet implemented (-2)`。这只是当前测试现象，尚不能证明 VSR 必须使用 Windows 11；驱动版本、GPU 支持以及实际加载的 VFX 运行库也可能影响结果。
 
 ### 初步测试观察
 
 以下结论来自有限设备和游戏中的主观对比，不代表普遍性能或画质结论。
 
+日常使用建议在 `DLSS_ZeroMV`、`DLSS_ZeroMV_Jitter` 和 `RTXVideo_VSR_Ultra` 中三选一，不建议叠加。VSR Ultra 性能不足时可退到 VSR High。非 NVIDIA 显卡也可以考虑 FSR2 Zero-MV；当前 FSR3、XeSS 和所有 Optical Flow 版本则主要保留作研究和对照。
+
 #### DLSS Super Resolution
 
 当前实现提供 Zero-MV、伪 jitter 和 50% 分辨率颜色光流三种实验路径。在部分较老或原生抗锯齿较弱的 3D 游戏中，DLSS 对边缘平滑和画面稳定性有明显改善；测试中较适合的场景包括 Frostpunk、戴森球计划、Minecraft，以及安卓模拟器中的 3D 游戏。部分场景下的主观效果优于 FSR1。
 
-由于缺少真实深度和运动向量，动态物体、镜头移动及遮挡变化时仍可能出现拖影和历史粘连。通过外部覆盖进行的额外模型/预设比较中，抗锯齿和平滑能力大致表现为 `L > M > J/K > CNN`，而抗拖影能力往往呈相反趋势。L 和 M 似乎更依赖正确的时序输入：原生适配时潜力较高，但缺失额外数据时也更难及时抛弃错误历史。该比较不代表 Magpie 内置了这些选项；当前公开代码固定请求 Balanced 模式和 Preset J。
+| Effect | 实测优点 | 实测缺点 | 推荐结论 |
+| --- | --- | --- | --- |
+| `DLSS_ZeroMV` | 在合适的游戏中，抗锯齿和边缘平滑改善明显，额外开销相对较低，也不会引入 Jitter 模式的偶发抖动 | 动态画面可能保留错误历史并产生拖影 | 推荐，作为 DLSS 的默认首选 |
+| `DLSS_ZeroMV_Jitter` | 部分测试中的拖影似乎比 Zero-MV 更少，可能是最近帧获得了更高影响力 | 偶尔出现可见抖动；源游戏投影并未真正 jitter，因此原因仍只是推测 | 推荐，与DLSS_ZeroMV为3d游戏二选一 |
+| `DLSS_OpticalFlow` | 尝试用颜色运动估计对齐动态历史 | 估算光流不等于引擎运动向量；实测画质较差，额外开销不值得 | 不推荐 |
+
+由于缺少真实深度和运动向量，动态物体、镜头移动及遮挡变化时仍可能出现拖影和历史粘连。优先在 Zero-MV 与 Jitter 两个 Effect 之间对比：Zero-MV 更稳定，Jitter 可能减少拖影但会偶发抖动。Optical Flow 不推荐。
+
+<details>
+<summary>补充：驱动层 DLSS 模型/预设覆盖</summary>
+
+下面的 M、L、J/K 和 CNN 是通过驱动层覆盖选择的 DLSS 模型/预设，不是 Magpie 中的独立 Effect，也不改变上述三个 Effect 的主次关系。
+
+| DLSS 模型/预设 | 实测优点 | 实测缺点 | 推荐结论 |
+| --- | --- | --- | --- |
+| M | AA 表现良好，综合最均衡；其时域权重似乎低于 L，因此拖影更小 | 平滑程度略弱于 L | 推荐，均衡 |
+| L | AA 和边缘最平滑 | 时域拖影比 M 稍明显；用于 DLAA 或接近原生分辨率渲染时开销偏大 | 更重视平滑度且 GPU 性能充足时 |
+| J/K | 可以正常运行 | 在这种仅输入颜色帧的接入方式中，没有表现出相对 M/L 的明显优势，整体效果一般 | 不推荐 |
+| CNN | 时序处理相对保守 | 实测 AA 和重建表现不及 M/L，整体效果一般 | 不推荐 |
+
+测试驱动层 DLSS 模型或预设覆盖时，建议使用 NVIDIA Profile Inspector 为 Magpie 创建独立应用 Profile。不同游戏可在 M 和 L 之间切换：M 更均衡，L 更强调平滑 AA。当前公开代码仍请求 Balanced 模式和 Preset J；驱动覆盖不属于 Magpie 内置功能。
+
+</details>
 
 #### FSR 2.2.1
 
-FSR2 提供 Zero-MV 和 50% 分辨率颜色光流两种路径。静态或低运动场景中，其边缘质量和稳定性主观上可优于 FSR1，但动态画面仍可能出现历史残留。目前颜色光流没有稳定优于 Zero-MV，部分场景反而更差，可能与光流方向、尺度、遮挡和非刚体运动估计误差有关，因此光流模式仍属于研究和对照功能。
+| Effect | 实测优点 | 实测缺点 | 推荐结论 |
+| --- | --- | --- | --- |
+| `FSR2_ZeroMV` | 实测效果尚可，画面比较平滑；支持跨厂商，开销低于 Optical Flow | 缺少真实反遮挡数据，运动时仍可能留下历史残影 | 推荐，尤其适合无法使用 DLSS 的设备 |
+| `FSR2_OpticalFlow` | 提供颜色运动输入实验 | 实测画质明显差于 Zero-MV，同时增加估流开销 | 不推荐 |
+
+#### FSR 3.1.5 Upscaler
+
+FSR3 使用 AMD 签名的 DirectX 12 FSR API 运行库。Magpie 仍是 D3D11 渲染器，因此该后端需要在 D3D11/D3D12 之间共享和复制资源，并通过围栏同步。这里没有接入帧生成。
+
+| Effect | 实测优点 | 实测缺点 | 推荐结论 |
+| --- | --- | --- | --- |
+| `FSR3_ZeroMV` | 后端可能已经正常生效，可作为接入实验 | 当前画质较差；D3D11→D3D12 桥接增加复制和同步，也不能完全排除输入处理仍存在问题 | 不推荐 |
+| `FSR3_OpticalFlow` | 验证上采样器对估算运动输入的响应 | 同时承担跨 API 与不可靠颜色光流的开销，实测结果较差 | 不推荐 |
 
 #### NVIDIA RTX Video
 
-RTX Video 提供同分辨率降噪和实际 VSR 放大。在 Galgame、视觉小说及部分二维低分辨率内容中，VSR 对压缩噪声、模糊线条、文字和角色边缘的改善非常明显，是当前实验中适用场景最明确的一项。代价是 NVIDIA VFX 运行库和模型较大，完整实验分发包约为 508 MiB。
+RTX Video 提供同分辨率降噪和实际 VSR 放大。实测最适合 Galgame、视觉小说和流媒体视频，可以改善压缩画面、模糊线条、文字和角色边缘。
+
+| Effect/档位 | 实测结果 | 推荐结论 |
+| --- | --- | --- |
+| 同分辨率 Denoise | 改善通常不明显，而且不具备放大效果 | 不推荐 |
+| VSR Low | 开销较低，但画质收益有限 | 不推荐 |
+| VSR Medium | 强于 Low，但相比 High/Ultra 没有足够优势 | 不推荐 |
+| VSR High | 画质改善明显，开销低于 Ultra | Ultra 性能不足时推荐 |
+| VSR Ultra | Galgame 和流媒体视频中的重建与降噪效果最好 | Galgame、流媒体视频优先推荐 |
+
+代价是 RTX Video 仅支持 NVIDIA，而且 VFX 运行库和模型会显著增加分发包体积。VSR 已在开发者的 Windows 11 测试机上生效；一台 Windows 10 测试机无法创建 VideoSuperRes。GPU、驱动、系统和运行库版本都可能影响兼容性。
+
+#### Intel XeSS 3.0.1
+
+XeSS 使用跨厂商 D3D12 DP4a 路径，可以在兼容的 Intel、NVIDIA 和 AMD GPU 上运行。Magpie 需要与 D3D12 共享纹理和围栏；这里没有使用仅限 Intel 的原生 D3D11 XeSS 路径。
+
+| Effect | 实测优点 | 实测缺点 | 推荐结论 |
+| --- | --- | --- | --- |
+| `XeSS_ZeroMV` | 后端可能已经正常生效，可用于验证跨厂商 DP4a 路径 | 当前画质较差；恒定深度无法识别反遮挡，D3D11→D3D12 桥接也增加开销和接入不确定性 | 不推荐 |
+| `XeSS_OpticalFlow` | 验证 XeSS 对估算运动输入的响应 | 仍缺少真实深度，并叠加估流与跨 API 开销，实测结果较差 | 不推荐 |
+
+#### Optical Flow 与 DLDSR
+
+当前所有基于 50% 分辨率颜色光流的版本均不推荐，包括 DLSS、FSR2、FSR3 和 XeSS Optical Flow。颜色光流无法替代引擎提供的真实运动向量和反遮挡数据；实测没有稳定提升画质，部分模式反而明显变差，同时还会消耗额外 GPU 时间。
+
+在 NVIDIA 平台上，如果游戏和显示模式支持，并且能够接受额外 GPU 开销，DLDSR 通常比从捕获画面估算运动更值得优先考虑。DLDSR 会让游戏以更高分辨率渲染后再缩小，并不是时域上采样的直接替代品，但它能从更可靠的原始采样开始处理。
 
 ### 外部开发依赖
 
@@ -57,6 +118,8 @@ RTX Video 提供同分辨率降噪和实际 VSR 放大。在 Galgame、视觉小
 - [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS)
 - [AMD FidelityFX FSR 2.2.1](https://github.com/GPUOpen-Effects/FidelityFX-FSR2/tree/v2.2.1)
 - [社区 FSR2 DirectX 11 后端](https://github.com/gameplug-labs/FidelityFX-FSR2-DX11)
+- [AMD FSR SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK)
+- [Intel XeSS SDK](https://github.com/intel/xess)
 - [NVIDIA Video Effects SDK 示例和安装说明](https://github.com/NVIDIA-Maxine/VFX-SDK-Samples)
 - [NVIDIA `nvidia-vfx` 软件包](https://pypi.org/project/nvidia-vfx/)
 
@@ -64,7 +127,7 @@ RTX Video 提供同分辨率降噪和实际 VSR 放大。在 Galgame、视觉小
 
 ### 源码与二进制分发
 
-Magpie 派生源码继续采用 GPLv3，发布源码时必须保留上游版权和许可证声明。AMD FSR2 另有 MIT 声明；NVIDIA SDK 和运行库仍受 NVIDIA 专有条款约束。
+Magpie 派生源码继续采用 GPLv3，发布源码时必须保留上游版权和许可证声明。AMD FSR2/FSR3 和 Intel XeSS 具有各自的许可声明与条款；NVIDIA SDK 和运行库仍受 NVIDIA 专有条款约束。
 
 第三方文件可以下载，并不自动代表可以再次分发。不要将 SDK 目录、模型、wheel 或 NVIDIA DLL 提交进本仓库。把 GPLv3 Magpie 程序与 NVIDIA 专有组件组合成公开二进制 Release，仍需单独审核许可证兼容性和再分发权限。在审核完成前，建议只发布源码；或者发布不包含专有组件的构建，让用户从 NVIDIA 获取允许使用的依赖。本段是项目维护层面的谨慎建议，不构成法律意见。
 

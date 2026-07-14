@@ -133,16 +133,17 @@ bool FSR2ZeroMVUpscaler::Resize(DeviceResources& r, ID3D11Texture2D* i, ID3D11Te
 bool FSR2ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
 	if (!_context) return false;
 	static constexpr float ZERO[4]{};
-	static constexpr float ONE[4]{ 1,1,1,1 };
+	static constexpr float REACTIVE_OF[4]{ 0.5f,0.5f,0.5f,0.5f };
+	static constexpr float REACTIVE_ZEROMV[4]{ 0.9f,0.9f,0.9f,0.9f };
 	_d3dDC->ClearUnorderedAccessViewFloat(_zeroDepthUav.get(), ZERO);
 	ID3D11Texture2D* motionVectors = _zeroMotion.get();
 	if (_enableOpticalFlow) {
 		if (!_opticalFlow || !_opticalFlow->Estimate(input)) return false;
 		motionVectors = _opticalFlow->GetMotionTexture();
-		_d3dDC->ClearUnorderedAccessViewFloat(_reactiveUav.get(), ZERO);
+		_d3dDC->ClearUnorderedAccessViewFloat(_reactiveUav.get(), REACTIVE_OF);
 	} else {
 		_d3dDC->ClearUnorderedAccessViewFloat(_zeroMotionUav.get(), ZERO);
-		_d3dDC->ClearUnorderedAccessViewFloat(_reactiveUav.get(), ONE);
+		_d3dDC->ClearUnorderedAccessViewFloat(_reactiveUav.get(), REACTIVE_ZEROMV);
 	}
 	D3D11_TEXTURE2D_DESC inDesc{};
 	input->GetDesc(&inDesc);
@@ -157,7 +158,9 @@ bool FSR2ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	d.reactive = getResource(static_cast<FfxFsr2Context*>(_context), _reactive.get(), L"FSR2_FullReactive", FFX_RESOURCE_STATE_COMPUTE_READ);
 	d.transparencyAndComposition = getResource(static_cast<FfxFsr2Context*>(_context), nullptr, nullptr, FFX_RESOURCE_STATE_COMPUTE_READ);
 	d.output = getResource(static_cast<FfxFsr2Context*>(_context), output, L"FSR2_Output", FFX_RESOURCE_STATE_UNORDERED_ACCESS);
-	d.motionVectorScale = { (float)inDesc.Width, (float)inDesc.Height };
+	// HalfResOpticalFlow stores motion directly in pixel units, so no render-size
+	// multiplication is needed. Applying width/height here made OF vectors huge.
+	d.motionVectorScale = { 1.0f, 1.0f };
 	d.renderSize = { inDesc.Width, inDesc.Height };
 	d.enableSharpening = true;
 	d.sharpness = 0.2f;

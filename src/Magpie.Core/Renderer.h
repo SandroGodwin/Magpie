@@ -125,6 +125,8 @@ private:
 	std::vector<EffectDrawer> _effectDrawers;
 	std::vector<std::unique_ptr<class DLSSZeroMVUpscaler>> _dlssZeroMVUpscalers;
 	std::vector<std::unique_ptr<class FSR2ZeroMVUpscaler>> _fsr2ZeroMVUpscalers;
+	std::vector<std::unique_ptr<class FSR3ZeroMVUpscaler>> _fsr3ZeroMVUpscalers;
+	std::vector<std::unique_ptr<class XeSSZeroMVUpscaler>> _xessZeroMVUpscalers;
 	std::vector<std::unique_ptr<class RTXVideoDenoiser>> _rtxVideoDenoisers;
 
 	StepTimer _stepTimer;

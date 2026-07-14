@@ -25,29 +25,90 @@ The fork owner used OpenAI Codex as a development assistant to add and test expe
 
 - NVIDIA DLSS Super Resolution with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
 - AMD FidelityFX Super Resolution 2.2.1 with zero motion vectors or 50%-resolution colour optical flow.
+- AMD FidelityFX Super Resolution 3.1.5 upscaling (without frame generation) through D3D11/D3D12 interoperability, with zero motion vectors or 50%-resolution colour optical flow.
+- Intel XeSS 3.0.1 Super Resolution with zero motion vectors or 50%-resolution colour optical flow through D3D11/D3D12 interoperability.
 - NVIDIA VideoSuperRes for same-resolution denoising and VSR upscaling.
 
 These integrations do not have access to the real depth, motion vectors, exposure, reactive masks, or projection jitter produced by a game engine. They may therefore produce ghosting, unstable detail, or worse image quality than a native in-game integration. They are research prototypes, not replacements for native DLSS or FSR support.
-
-RTX Video VSR has worked on the developer's Windows 11 test machine. A Windows 10 test machine returned `The requested feature is not yet implemented (-2)` while creating VideoSuperRes. This is only an observation, not a confirmed Windows 11 requirement: driver version, GPU support, and the loaded VFX runtime may also affect the result.
 
 ### Initial test observations
 
 The following observations are subjective results from a limited set of systems and games; they are not general performance or image-quality claims.
 
+For normal use, choose one of `DLSS_ZeroMV`, `DLSS_ZeroMV_Jitter`, or `RTXVideo_VSR_Ultra`; stacking them is not recommended. VSR High is the fallback when Ultra is too expensive. FSR2 Zero-MV is also usable on non-NVIDIA hardware, while the current FSR3, XeSS, and all Optical Flow variants are retained primarily for research and comparison.
+
 #### DLSS Super Resolution
 
 The current implementation provides three experimental paths: Zero-MV, synthetic jitter metadata, and 50%-resolution colour optical flow. DLSS noticeably improved edge smoothing and image stability in some older 3D games or games with weak native antialiasing. Suitable test cases included Frostpunk, Dyson Sphere Program, Minecraft, and 3D games running in Android emulators. In some scenes, the subjective result was better than FSR1.
 
-Without real depth and motion vectors, moving objects, camera motion, and disocclusion can still produce ghosting or history trails. Additional model/preset comparisons made through external overrides suggested an antialiasing and smoothing order of roughly `L > M > J/K > CNN`, while resistance to ghosting often followed the opposite trend. L and M appeared more dependent on correct temporal inputs: they have high potential in native integrations, but may also retain incorrect history longer when auxiliary data is missing. This comparison does not mean these choices are built into Magpie; the public source currently requests Balanced mode and Preset J.
+| Effect | Observed advantages | Observed disadvantages | Recommendation |
+| --- | --- | --- | --- |
+| `DLSS_ZeroMV` | Clear antialiasing and edge-smoothing gains in suitable games; relatively low overhead and no occasional jitter from the Jitter path | Motion can retain incorrect history and produce ghosting | Recommended as the default DLSS choice |
+| `DLSS_ZeroMV_Jitter` | Appeared to retain less ghosting than Zero-MV in some tests, possibly because recent frames receive more influence | Occasional visible jitter; the source projection is not truly jittered, so the explanation remains speculative | Recommended; choose between it and `DLSS_ZeroMV` for 3D games |
+| `DLSS_OpticalFlow` | Attempts to align moving history using estimated colour motion | The estimated flow is not engine motion data; image quality was poor and the extra cost was not justified | Not recommended |
+
+Without real depth and motion vectors, moving objects, camera motion, and disocclusion can still produce ghosting or history trails. Compare the Zero-MV and Jitter Effects first: Zero-MV is steadier, while Jitter may reduce ghosting at the cost of occasional visible shake. Optical Flow is not recommended.
+
+<details>
+<summary>Supplement: driver-level DLSS model/preset overrides</summary>
+
+M, L, J/K, and CNN below are DLSS models or presets selected through driver-level overrides. They are not separate Magpie Effects and do not change the priority of the three Effects above.
+
+| DLSS model/preset | Observed advantages | Observed disadvantages | Recommendation |
+| --- | --- | --- | --- |
+| M | Good antialiasing with the best overall balance; its temporal weighting appeared lower than L, resulting in less ghosting | Slightly less smooth than L | Recommended; balanced |
+| L | Smoothest antialiasing and edges | Slightly more temporal ghosting than M; expensive when used for DLAA or near-native-resolution rendering | For users who prioritize smoothness and have sufficient GPU headroom |
+| J/K | Functional, but produced no compelling advantage over M/L in this colour-only integration | Overall reconstruction quality was unremarkable | Not recommended |
+| CNN | Conservative but generally unremarkable in these tests | Antialiasing and reconstruction were weaker than M/L | Not recommended |
+
+Creating a dedicated Magpie application profile in NVIDIA Profile Inspector is recommended when testing driver-level DLSS model or preset overrides. Switch between M and L per game: M is the more balanced choice, while L prioritizes smoother antialiasing. The public code still requests Balanced mode and Preset J; driver overrides are external to Magpie.
+
+</details>
 
 #### FSR 2.2.1
 
-FSR2 provides Zero-MV and 50%-resolution colour optical-flow paths. In static or low-motion scenes, edge quality and stability could subjectively exceed FSR1, but history artefacts remained possible in motion. Colour optical flow did not consistently outperform Zero-MV and was worse in some scenes, possibly because of errors in flow direction, scale, occlusion, or non-rigid motion. The optical-flow mode therefore remains a research and comparison feature.
+| Effect | Observed advantages | Observed disadvantages | Recommendation |
+| --- | --- | --- | --- |
+| `FSR2_ZeroMV` | The result was reasonably good and visually smooth; cross-vendor and lighter than the Optical Flow path | Motion can still leave history artefacts because real disocclusion data is unavailable | Recommended, especially when DLSS is unavailable |
+| `FSR2_OpticalFlow` | Experimental colour-motion input | Image quality was substantially worse than Zero-MV while adding flow-estimation cost | Not recommended |
+
+#### FSR 3.1.5 Upscaler
+
+FSR3 uses AMD's signed DirectX 12 FSR API runtime. Magpie remains a D3D11 renderer, so this backend shares and copies resources and synchronizes fences across D3D11 and D3D12. Frame generation is not integrated.
+
+| Effect | Observed advantages | Observed disadvantages | Recommendation |
+| --- | --- | --- | --- |
+| `FSR3_ZeroMV` | The backend may be functioning and remains useful as an integration experiment | Current image quality was poor, and the D3D11-to-D3D12 bridge adds copies, synchronization, and uncertainty about whether every input is handled correctly | Not recommended |
+| `FSR3_OpticalFlow` | Tests the upscaler with estimated motion input | Combines the cross-API overhead with unreliable colour flow and produced poor results | Not recommended |
 
 #### NVIDIA RTX Video
 
-RTX Video provides same-resolution denoising and true VSR upscaling. VSR produced particularly visible improvements in visual novels, Galgames, and some low-resolution 2D content, cleaning compression noise and improving blurred lines, text, and character edges. This is currently the clearest use case among the experimental integrations. The trade-off is package size: the NVIDIA VFX runtime and models make the complete experimental distribution approximately 508 MiB.
+RTX Video provides same-resolution denoising and true VSR upscaling. Its strongest use cases were Galgames, visual novels, and streaming video, where it improved compressed imagery, blurred lines, text, and character edges.
+
+| Effect/quality | Observed result | Recommendation |
+| --- | --- | --- |
+| Same-resolution Denoise | Improvement was generally modest and it does not upscale | Not recommended |
+| VSR Low | Lower cost, but image-quality gains were limited | Not recommended |
+| VSR Medium | Better than Low, but not compelling compared with High/Ultra | Not recommended |
+| VSR High | Strong image-quality improvement with lower cost than Ultra | Recommended when Ultra is too expensive |
+| VSR Ultra | Best reconstruction and denoising in Galgames and streaming video | First choice for Galgames and streaming video |
+
+The trade-off is that RTX Video is NVIDIA-only and its VFX runtime and models greatly increase the distribution size. VSR worked on the developer's Windows 11 test machine, while one Windows 10 system failed to create VideoSuperRes; GPU, driver, OS, and runtime versions may all affect compatibility.
+
+#### Intel XeSS 3.0.1
+
+XeSS uses the cross-vendor D3D12 DP4a path and can run on compatible Intel, NVIDIA, and AMD GPUs. Magpie shares textures and fences with D3D12; the Intel-only native D3D11 XeSS path is deliberately not used.
+
+| Effect | Observed advantages | Observed disadvantages | Recommendation |
+| --- | --- | --- | --- |
+| `XeSS_ZeroMV` | The backend may be functioning and demonstrates the cross-vendor DP4a path | Current image quality was poor; constant depth cannot identify disocclusion, and the D3D11-to-D3D12 bridge adds overhead and integration uncertainty | Not recommended |
+| `XeSS_OpticalFlow` | Tests XeSS with estimated motion input | Still lacks real depth, adds flow and cross-API overhead, and produced poor results | Not recommended |
+
+#### Optical Flow and DLDSR
+
+None of the current 50%-resolution colour Optical Flow variants are recommended, including the DLSS, FSR2, FSR3, and XeSS versions. Colour flow cannot replace engine-provided motion vectors and disocclusion data; it did not produce consistent image-quality gains and sometimes made the result substantially worse while consuming additional GPU time.
+
+On NVIDIA systems, if a game and display mode support it and additional GPU cost is acceptable, DLDSR is generally a more sensible image-quality path than estimating motion from captured frames. DLDSR renders the game at a higher resolution and then downsamples it, so it is not a direct replacement for temporal upscaling, but it starts with more reliable source samples.
 
 ### External development dependencies
 
@@ -57,6 +118,8 @@ Third-party SDKs, models, wheels, and proprietary NVIDIA binaries are not part o
 - [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS)
 - [AMD FidelityFX FSR 2.2.1](https://github.com/GPUOpen-Effects/FidelityFX-FSR2/tree/v2.2.1)
 - [Community FSR2 DirectX 11 backend](https://github.com/gameplug-labs/FidelityFX-FSR2-DX11)
+- [AMD FSR SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK)
+- [Intel XeSS SDK](https://github.com/intel/xess)
 - [NVIDIA Video Effects SDK samples and setup instructions](https://github.com/NVIDIA-Maxine/VFX-SDK-Samples)
 - [NVIDIA `nvidia-vfx` package](https://pypi.org/project/nvidia-vfx/)
 
@@ -64,7 +127,7 @@ To build the optional backends, create `src/BuildOptions.props.user` and define 
 
 ### Source and binary distribution
 
-The Magpie-derived source remains licensed under GPLv3. Source distributions must preserve the upstream copyright and license notices. AMD FSR2 has its own MIT notice. NVIDIA SDKs and runtime files remain under NVIDIA's proprietary terms.
+The Magpie-derived source remains licensed under GPLv3. Source distributions must preserve the upstream copyright and license notices. AMD FSR2/FSR3 and Intel XeSS have their own notices and terms. NVIDIA SDKs and runtime files remain under NVIDIA's proprietary terms.
 
 Do not treat a GitHub download link as permission to redistribute a third-party SDK. In particular, do not commit SDK folders, models, wheels, or NVIDIA DLLs to this repository. Public binary releases that combine GPLv3 Magpie code with proprietary NVIDIA components require a separate license-compatibility and redistribution review. Until that review is complete, publish source code only, or publish builds without the proprietary components and have users obtain permitted dependencies from NVIDIA. This is a project-maintainer precaution, not legal advice.
 

@@ -35,6 +35,8 @@ void DLSSZeroMVUpscaler::_Reset() noexcept {
 
 	_zeroDepthUav = nullptr;
 	_zeroDepth = nullptr;
+	_biasCurrentColorMaskUav = nullptr;
+	_biasCurrentColorMask = nullptr;
 	_zeroMotionVectorsUav = nullptr;
 	_zeroMotionVectors = nullptr;
 	_device = nullptr;
@@ -83,7 +85,14 @@ bool DLSSZeroMVUpscaler::Initialize(
 		inputDesc.Height,
 		D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS
 	);
-	if (!_zeroMotionVectors || !_zeroDepth) {
+	_biasCurrentColorMask = DirectXHelper::CreateTexture2D(
+		_device,
+		DXGI_FORMAT_R8_UNORM,
+		inputDesc.Width,
+		inputDesc.Height,
+		D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS
+	);
+	if (!_zeroMotionVectors || !_zeroDepth || !_biasCurrentColorMask) {
 		Logger::Get().Error("Create DLSS Zero-MV auxiliary textures failed");
 		_Reset();
 		return false;
@@ -102,6 +111,10 @@ bool DLSSZeroMVUpscaler::Initialize(
 	if (SUCCEEDED(hr)) {
 		hr = _device->CreateUnorderedAccessView(
 			_zeroDepth.get(), nullptr, _zeroDepthUav.put());
+	}
+	if (SUCCEEDED(hr)) {
+		hr = _device->CreateUnorderedAccessView(
+			_biasCurrentColorMask.get(), nullptr, _biasCurrentColorMaskUav.put());
 	}
 	if (FAILED(hr)) {
 		Logger::Get().ComError("Create DLSS Zero-MV UAV failed", hr);
@@ -194,11 +207,13 @@ static float Halton(uint32_t index, uint32_t base) noexcept {
 }
 
 bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
-	if (!_feature || !_parameters || !_zeroMotionVectorsUav || !_zeroDepthUav) {
+	if (!_feature || !_parameters || !_zeroMotionVectorsUav || !_zeroDepthUav ||
+		!_biasCurrentColorMaskUav) {
 		return false;
 	}
 
 	static constexpr float ZERO[4]{};
+	static constexpr float BIAS_CURRENT_COLOR[4]{ 0.5f,0.5f,0.5f,0.5f };
 	ID3D11Texture2D* motionVectors = _zeroMotionVectors.get();
 	if (_enableOpticalFlow) {
 		if (!_opticalFlow || !_opticalFlow->Estimate(input)) return false;
@@ -207,14 +222,17 @@ bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 		_d3dDC->ClearUnorderedAccessViewFloat(_zeroMotionVectorsUav.get(), ZERO);
 	}
 	_d3dDC->ClearUnorderedAccessViewFloat(_zeroDepthUav.get(), ZERO);
+	_d3dDC->ClearUnorderedAccessViewFloat(_biasCurrentColorMaskUav.get(), BIAS_CURRENT_COLOR);
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
 	input->GetDesc(&inputDesc);
 	NVSDK_NGX_D3D11_DLSS_Eval_Params evalParams{};
+	evalParams.Feature.InSharpness = 0.3f;
 	evalParams.Feature.pInColor = input;
 	evalParams.Feature.pInOutput = output;
 	evalParams.pInDepth = _zeroDepth.get();
 	evalParams.pInMotionVectors = motionVectors;
+	evalParams.pInBiasCurrentColorMask = _biasCurrentColorMask.get();
 	if (_enableJitter) {
 		// An 8-sample Halton(2,3) sequence centered around zero. Since Magpie
 		// cannot jitter the source application's projection, this is deliberately

@@ -1180,7 +1180,7 @@ bool AppSettings::_SetDefaultShortcuts() noexcept {
 }
 
 void AppSettings::_SetDefaultScalingModes() noexcept {
-	_scalingModes.resize(7);
+	_scalingModes.resize(12);
 
 	// Lanczos
 	{
@@ -1245,6 +1245,51 @@ void AppSettings::_SetDefaultScalingModes() noexcept {
 		nearest.name = L"Nearest";
 		nearest.scalingType = ::Magpie::ScalingType::Normal;
 		nearest.scale = { 2.0f,2.0f };
+	}
+	// DLSS Zero-MV
+	{
+		auto& dlssZeroMV = _scalingModes[7];
+		dlssZeroMV.name = L"DLSS Zero-MV";
+
+		auto& effect = dlssZeroMV.effects.emplace_back();
+		effect.name = L"DLSS\\DLSS_ZeroMV";
+		effect.scalingType = ::Magpie::ScalingType::Fit;
+	}
+	// DLSS Jitter
+	{
+		auto& dlssJitter = _scalingModes[8];
+		dlssJitter.name = L"DLSS Jitter";
+
+		auto& effect = dlssJitter.effects.emplace_back();
+		effect.name = L"DLSS\\DLSS_ZeroMV_Jitter";
+		effect.scalingType = ::Magpie::ScalingType::Fit;
+	}
+	// FSR2 Zero-MV
+	{
+		auto& fsr2ZeroMV = _scalingModes[9];
+		fsr2ZeroMV.name = L"FSR2 Zero-MV";
+
+		auto& effect = fsr2ZeroMV.effects.emplace_back();
+		effect.name = L"FSR2\\FSR2_ZeroMV";
+		effect.scalingType = ::Magpie::ScalingType::Fit;
+	}
+	// RTX Video VSR High
+	{
+		auto& vsrHigh = _scalingModes[10];
+		vsrHigh.name = L"RTX Video VSR High";
+
+		auto& effect = vsrHigh.effects.emplace_back();
+		effect.name = L"RTXVideo\\RTXVideo_VSR_High";
+		effect.scalingType = ::Magpie::ScalingType::Fit;
+	}
+	// RTX Video VSR Ultra
+	{
+		auto& vsrUltra = _scalingModes[11];
+		vsrUltra.name = L"RTX Video VSR Ultra";
+
+		auto& effect = vsrUltra.effects.emplace_back();
+		effect.name = L"RTXVideo\\RTXVideo_VSR_Ultra";
+		effect.scalingType = ::Magpie::ScalingType::Fit;
 	}
 
 	// 全局缩放模式默认为 Lanczos

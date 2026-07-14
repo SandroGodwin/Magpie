@@ -39,6 +39,8 @@ private:
 	winrt::com_ptr<ID3D11UnorderedAccessView> _zeroMotionVectorsUav;
 	winrt::com_ptr<ID3D11Texture2D> _zeroDepth;
 	winrt::com_ptr<ID3D11UnorderedAccessView> _zeroDepthUav;
+	winrt::com_ptr<ID3D11Texture2D> _biasCurrentColorMask;
+	winrt::com_ptr<ID3D11UnorderedAccessView> _biasCurrentColorMaskUav;
 	void* _parameters = nullptr;
 	void* _feature = nullptr;
 	bool _ngxInitialized = false;

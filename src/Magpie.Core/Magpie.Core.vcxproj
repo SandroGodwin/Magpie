@@ -87,6 +87,8 @@
     <ClInclude Include="YasHelper.h" />
     <ClInclude Include="DLSSZeroMVUpscaler.h" />
     <ClInclude Include="FSR2ZeroMVUpscaler.h" />
+    <ClInclude Include="FSR3ZeroMVUpscaler.h" />
+    <ClInclude Include="XeSSZeroMVUpscaler.h" />
     <ClInclude Include="HalfResOpticalFlow.h" />
     <ClInclude Include="RTXVideoDenoiser.h" />
   </ItemGroup>
@@ -130,6 +132,8 @@
     <ClCompile Include="WindowHelper.cpp" />
     <ClCompile Include="DLSSZeroMVUpscaler.cpp" />
     <ClCompile Include="FSR2ZeroMVUpscaler.cpp" />
+    <ClCompile Include="FSR3ZeroMVUpscaler.cpp" />
+    <ClCompile Include="XeSSZeroMVUpscaler.cpp" />
     <ClCompile Include="HalfResOpticalFlow.cpp" />
     <ClCompile Include="RTXVideoDenoiser.cpp" />
     <ClCompile Include="$(VFXSdkDir)\nvvfx\src\NVVideoEffectsProxy.cpp" Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">
