@@ -42,7 +42,7 @@ RTX Video VSR 已在开发者的 Windows 11 测试机上运行。另一台 Windo
 - [NVIDIA Video Effects SDK 示例和安装说明](https://github.com/NVIDIA-Maxine/VFX-SDK-Samples)
 - [NVIDIA `nvidia-vfx` 软件包](https://pypi.org/project/nvidia-vfx/)
 
-可选后端开关和本机 SDK 路径应写入 `src/BuildOptions.props.user`。这是本机配置文件，不应提交到公共仓库。
+如需编译可选后端，请自行新建 `src/BuildOptions.props.user`，并在其中设置功能开关和本机 SDK 路径。该文件已被 `.gitignore` 排除，只用于本机配置，不应提交到公共仓库。
 
 ### 源码与二进制分发
 

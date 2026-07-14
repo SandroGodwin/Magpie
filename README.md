@@ -42,7 +42,7 @@ Third-party SDKs, models, wheels, and proprietary NVIDIA binaries are not part o
 - [NVIDIA Video Effects SDK samples and setup instructions](https://github.com/NVIDIA-Maxine/VFX-SDK-Samples)
 - [NVIDIA `nvidia-vfx` package](https://pypi.org/project/nvidia-vfx/)
 
-Enable the optional backends and set local SDK paths in `src/BuildOptions.props.user`. This machine-specific file is intentionally excluded from the public repository.
+To build the optional backends, create `src/BuildOptions.props.user` and define the feature switches and local SDK paths there. The file is excluded by `.gitignore`; it is machine-specific and must not be committed to the public repository.
 
 ### Source and binary distribution
 
