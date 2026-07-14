@@ -123,6 +123,9 @@ private:
 	Magpie::BackendDescriptorStore _backendDescriptorStore;
 	std::unique_ptr<FrameSourceBase> _frameSource;
 	std::vector<EffectDrawer> _effectDrawers;
+	std::vector<std::unique_ptr<class DLSSZeroMVUpscaler>> _dlssZeroMVUpscalers;
+	std::vector<std::unique_ptr<class FSR2ZeroMVUpscaler>> _fsr2ZeroMVUpscalers;
+	std::vector<std::unique_ptr<class RTXVideoDenoiser>> _rtxVideoDenoisers;
 
 	StepTimer _stepTimer;
 	EffectsProfiler _effectsProfiler;

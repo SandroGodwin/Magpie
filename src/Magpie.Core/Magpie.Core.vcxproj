@@ -85,6 +85,10 @@
     <ClInclude Include="AdaptivePresenter.h" />
     <ClInclude Include="TextureHelper.h" />
     <ClInclude Include="YasHelper.h" />
+    <ClInclude Include="DLSSZeroMVUpscaler.h" />
+    <ClInclude Include="FSR2ZeroMVUpscaler.h" />
+    <ClInclude Include="HalfResOpticalFlow.h" />
+    <ClInclude Include="RTXVideoDenoiser.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BackendDescriptorStore.cpp" />
@@ -124,6 +128,16 @@
     <ClCompile Include="TextureHelper.cpp" />
     <ClCompile Include="Win32Helper.cpp" />
     <ClCompile Include="WindowHelper.cpp" />
+    <ClCompile Include="DLSSZeroMVUpscaler.cpp" />
+    <ClCompile Include="FSR2ZeroMVUpscaler.cpp" />
+    <ClCompile Include="HalfResOpticalFlow.cpp" />
+    <ClCompile Include="RTXVideoDenoiser.cpp" />
+    <ClCompile Include="$(VFXSdkDir)\nvvfx\src\NVVideoEffectsProxy.cpp" Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="$(VFXSdkDir)\nvvfx\src\nvCVImageProxy.cpp" Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\DuplicateFrameCS.hlsl">

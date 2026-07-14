@@ -18,6 +18,9 @@
 #include "StrHelper.h"
 #include "TextureHelper.h"
 #include "Win32Helper.h"
+#include "DLSSZeroMVUpscaler.h"
+#include "FSR2ZeroMVUpscaler.h"
+#include "RTXVideoDenoiser.h"
 #ifdef MP_USE_COMPSWAPCHAIN
 #include "CompSwapchainPresenter.h"
 #else
@@ -505,6 +508,12 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 	}
 
 	_effectDrawers.resize(effectCount);
+	_dlssZeroMVUpscalers.clear();
+	_dlssZeroMVUpscalers.resize(effectCount);
+	_fsr2ZeroMVUpscalers.clear();
+	_fsr2ZeroMVUpscalers.resize(effectCount);
+	_rtxVideoDenoisers.clear();
+	_rtxVideoDenoisers.resize(effectCount);
 
 	ID3D11Texture2D* inOutTexture = _frameSource->GetOutput();
 	for (uint32_t i = 0; i < effectCount; ++i) {
@@ -517,6 +526,62 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 		)) {
 			Logger::Get().Error(fmt::format("初始化效果#{} ({}) 失败", i, effects[i].name));
 			return nullptr;
+		}
+
+		if (effects[i].name == "DLSS\\DLSS_ZeroMV" ||
+			effects[i].name == "DLSS\\DLSS_ZeroMV_Jitter" ||
+			effects[i].name == "DLSS\\DLSS_OpticalFlow") {
+			auto upscaler = std::make_unique<DLSSZeroMVUpscaler>();
+			if (!upscaler->Initialize(
+				_backendResources,
+				_effectDrawers[i].GetTexture(0),
+				_effectDrawers[i].GetOutputTexture(),
+				effects[i].name == "DLSS\\DLSS_ZeroMV_Jitter",
+				effects[i].name == "DLSS\\DLSS_OpticalFlow"
+			)) {
+				Logger::Get().Error("Initialize DLSS Zero-MV failed");
+				return nullptr;
+			}
+			_dlssZeroMVUpscalers[i] = std::move(upscaler);
+		}
+
+		if (effects[i].name == "FSR2\\FSR2_ZeroMV" ||
+			effects[i].name == "FSR2\\FSR2_OpticalFlow") {
+			auto upscaler = std::make_unique<FSR2ZeroMVUpscaler>();
+			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
+				_effectDrawers[i].GetOutputTexture(),
+				effects[i].name == "FSR2\\FSR2_OpticalFlow")) {
+				Logger::Get().Error("Initialize FSR2 Zero-MV failed");
+				return nullptr;
+			}
+			_fsr2ZeroMVUpscalers[i] = std::move(upscaler);
+		}
+
+		if (effects[i].name == "RTXVideo\\RTXVideo_Denoise_Low" ||
+			effects[i].name == "RTXVideo\\RTXVideo_Denoise_Medium" ||
+			effects[i].name == "RTXVideo\\RTXVideo_Denoise_High" ||
+			effects[i].name == "RTXVideo\\RTXVideo_Denoise_Ultra" ||
+			effects[i].name == "RTXVideo\\RTXVideo_VSR_Low" ||
+			effects[i].name == "RTXVideo\\RTXVideo_VSR_Medium" ||
+			effects[i].name == "RTXVideo\\RTXVideo_VSR_High" ||
+			effects[i].name == "RTXVideo\\RTXVideo_VSR_Ultra") {
+			uint32_t qualityLevel = 8;
+			const bool isVSRUpscale = effects[i].name.find("_VSR_") != std::string::npos;
+			if (isVSRUpscale) {
+				qualityLevel = effects[i].name.ends_with("_Low") ? 1 :
+					effects[i].name.ends_with("_Medium") ? 2 :
+					effects[i].name.ends_with("_High") ? 3 : 4;
+			} else if (effects[i].name.ends_with("_Medium")) qualityLevel = 9;
+			else if (effects[i].name.ends_with("_High")) qualityLevel = 10;
+			else if (effects[i].name.ends_with("_Ultra")) qualityLevel = 11;
+
+			auto denoiser = std::make_unique<RTXVideoDenoiser>();
+			if (!denoiser->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
+				_effectDrawers[i].GetOutputTexture(), qualityLevel)) {
+				Logger::Get().Error("Initialize RTX Video denoise failed");
+				return nullptr;
+			}
+			_rtxVideoDenoisers[i] = std::move(denoiser);
 		}
 
 		// 释放 CSO 内存，不再需要它们
@@ -644,6 +709,25 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 			&inOutTexture
 		)) {
 			Logger::Get().Error(fmt::format("更改效果#{} ({}) 尺寸失败", i, effects[i].name));
+			return nullptr;
+		}
+
+		if (_dlssZeroMVUpscalers[i] && !_dlssZeroMVUpscalers[i]->Resize(
+			_backendResources,
+			_effectDrawers[i].GetTexture(0),
+			_effectDrawers[i].GetOutputTexture()
+		)) {
+			Logger::Get().Error("Resize DLSS Zero-MV failed");
+			return nullptr;
+		}
+		if (_fsr2ZeroMVUpscalers[i] && !_fsr2ZeroMVUpscalers[i]->Resize(
+			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
+			Logger::Get().Error("Resize FSR2 Zero-MV failed");
+			return nullptr;
+		}
+		if (_rtxVideoDenoisers[i] && !_rtxVideoDenoisers[i]->Resize(
+			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
+			Logger::Get().Error("Resize RTX Video denoise failed");
 			return nullptr;
 		}
 	}
@@ -972,8 +1056,27 @@ void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 
 	_effectsProfiler.OnBeginEffects(d3dDC);
 
-	for (const EffectDrawer& effectDrawer : _effectDrawers) {
-		effectDrawer.Draw(_effectsProfiler);
+	for (uint32_t i = 0; i < _effectDrawers.size(); ++i) {
+		const EffectDrawer& effectDrawer = _effectDrawers[i];
+		if (i < _rtxVideoDenoisers.size() && _rtxVideoDenoisers[i]) {
+			if (!_rtxVideoDenoisers[i]->Draw(
+				effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture())) {
+				Logger::Get().Error("Draw RTX Video denoise failed");
+			}
+			_effectsProfiler.OnEndPass(d3dDC);
+		} else if (i < _fsr2ZeroMVUpscalers.size() && _fsr2ZeroMVUpscalers[i]) {
+			if (!_fsr2ZeroMVUpscalers[i]->Draw(effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture()))
+				Logger::Get().Error("Draw FSR2 Zero-MV failed");
+			_effectsProfiler.OnEndPass(d3dDC);
+		} else if (i < _dlssZeroMVUpscalers.size() && _dlssZeroMVUpscalers[i]) {
+			if (!_dlssZeroMVUpscalers[i]->Draw(
+				effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture())) {
+				Logger::Get().Error("Draw DLSS Zero-MV failed");
+			}
+			_effectsProfiler.OnEndPass(d3dDC);
+		} else {
+			effectDrawer.Draw(_effectsProfiler);
+		}
 	}
 
 	_effectsProfiler.OnEndEffects(d3dDC);

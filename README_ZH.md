@@ -17,7 +17,40 @@
 
 Magpie 是一个轻量级的窗口超分辨率工具，内置众多高效的算法和滤镜。
 
-👉 [下载](https://github.com/Blinue/Magpie/releases)
+## 关于这个实验性 Fork
+
+本仓库是 [Blinue/Magpie](https://github.com/Blinue/Magpie) 的非官方实验性 Fork。Magpie 及本代码库的大部分内容由 Blinue 和上游贡献者创作。本 Fork 不代表 Magpie 官方，也不由上游项目提供支持。
+
+Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终颜色帧的实验功能：
+
+- NVIDIA DLSS Super Resolution：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
+- AMD FidelityFX Super Resolution 2.2.1：零运动向量或 50% 分辨率颜色光流。
+- NVIDIA VideoSuperRes：同分辨率降噪和 VSR 放大。
+
+这些接入无法获得游戏引擎提供的真实深度、运动向量、曝光、反应遮罩和投影 jitter，因此可能出现拖影、细节不稳定，效果也可能弱于游戏原生接入。它们属于研究原型，不能视为原生 DLSS 或 FSR 的替代品。
+
+RTX Video VSR 已在开发者的 Windows 11 测试机上运行。另一台 Windows 10 测试机在创建 VideoSuperRes 时返回了 `The requested feature is not yet implemented (-2)`。这只是当前测试现象，尚不能证明 VSR 必须使用 Windows 11；驱动版本、GPU 支持以及实际加载的 VFX 运行库也可能影响结果。
+
+### 外部开发依赖
+
+本源码仓库不包含第三方 SDK、模型、wheel 或 NVIDIA 专有二进制文件。请从原作者处获取，并自行接受对应许可证：
+
+- [Magpie 原始仓库](https://github.com/Blinue/Magpie)
+- [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS)
+- [AMD FidelityFX FSR 2.2.1](https://github.com/GPUOpen-Effects/FidelityFX-FSR2/tree/v2.2.1)
+- [社区 FSR2 DirectX 11 后端](https://github.com/gameplug-labs/FidelityFX-FSR2-DX11)
+- [NVIDIA Video Effects SDK 示例和安装说明](https://github.com/NVIDIA-Maxine/VFX-SDK-Samples)
+- [NVIDIA `nvidia-vfx` 软件包](https://pypi.org/project/nvidia-vfx/)
+
+可选后端开关和本机 SDK 路径应写入 `src/BuildOptions.props.user`。这是本机配置文件，不应提交到公共仓库。
+
+### 源码与二进制分发
+
+Magpie 派生源码继续采用 GPLv3，发布源码时必须保留上游版权和许可证声明。AMD FSR2 另有 MIT 声明；NVIDIA SDK 和运行库仍受 NVIDIA 专有条款约束。
+
+第三方文件可以下载，并不自动代表可以再次分发。不要将 SDK 目录、模型、wheel 或 NVIDIA DLL 提交进本仓库。把 GPLv3 Magpie 程序与 NVIDIA 专有组件组合成公开二进制 Release，仍需单独审核许可证兼容性和再分发权限。在审核完成前，建议只发布源码；或者发布不包含专有组件的构建，让用户从 NVIDIA 获取允许使用的依赖。本段是项目维护层面的谨慎建议，不构成法律意见。
+
+👉 [Magpie 官方版本下载](https://github.com/Blinue/Magpie/releases)
 
 👉 [FAQ](https://github.com/Blinue/Magpie/wiki/FAQ)
 

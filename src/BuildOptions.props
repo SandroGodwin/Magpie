@@ -14,6 +14,17 @@
     <DebugInfoOnOverlay>false</DebugInfoOnOverlay>
     <!-- 使用 composition swapchain 呈现 -->
     <UseCompSwapchain>false</UseCompSwapchain>
+    <!-- Experimental NVIDIA DLSS-SR with cleared motion/depth inputs. -->
+    <EnableDLSSZeroMV>false</EnableDLSSZeroMV>
+    <DLSSSdkDir></DLSSSdkDir>
+    <EnableFSR2ZeroMV>false</EnableFSR2ZeroMV>
+    <FSR2SdkDir></FSR2SdkDir>
+    <FSR2RuntimeDir></FSR2RuntimeDir>
+    <!-- NVIDIA Video Super Resolution same-resolution denoise modes (8-11). -->
+    <EnableRTXVideoDenoise>false</EnableRTXVideoDenoise>
+    <VFXSdkDir></VFXSdkDir>
+    <VFXRuntimeDir></VFXRuntimeDir>
+    <VFXLicenseDir></VFXLicenseDir>
     
     <MajorVersion></MajorVersion>
     <MinorVersion></MinorVersion>

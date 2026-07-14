@@ -62,6 +62,46 @@
     <CopyFileToFolders Include="FSR\FSR_RCAS.hlsl">
       <FileType>Document</FileType>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="FSR2\FSR2_ZeroMV.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="FSR2\FSR2_OpticalFlow.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_Denoise_Low.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_Denoise_Medium.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_Denoise_High.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_Denoise_Ultra.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_VSR_Low.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_VSR_Medium.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_VSR_High.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="RTXVideo\RTXVideo_VSR_Ultra.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
     <CopyFileToFolders Include="SMAA\AreaTex.dds" />
     <CopyFileToFolders Include="SMAA\SearchTex.dds" />
     <CopyFileToFolders Include="Anime4K\Anime4K_3D_AA_Upscale_US.hlsl">
@@ -460,6 +500,17 @@
     </CopyFileToFolders>
     <CopyFileToFolders Include="SGSR.hlsl">
       <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="DLSS\DLSS_ZeroMV.hlsl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="DLSS\DLSS_ZeroMV_Jitter.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="DLSS\DLSS_OpticalFlow.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
     </CopyFileToFolders>
     <CopyFileToFolders Include="k7_modernAnime_FHD_x2.hlsl">
       <FileType>Document</FileType>
