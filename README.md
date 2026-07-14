@@ -31,6 +31,24 @@ These integrations do not have access to the real depth, motion vectors, exposur
 
 RTX Video VSR has worked on the developer's Windows 11 test machine. A Windows 10 test machine returned `The requested feature is not yet implemented (-2)` while creating VideoSuperRes. This is only an observation, not a confirmed Windows 11 requirement: driver version, GPU support, and the loaded VFX runtime may also affect the result.
 
+### Initial test observations
+
+The following observations are subjective results from a limited set of systems and games; they are not general performance or image-quality claims.
+
+#### DLSS Super Resolution
+
+The current implementation provides three experimental paths: Zero-MV, synthetic jitter metadata, and 50%-resolution colour optical flow. DLSS noticeably improved edge smoothing and image stability in some older 3D games or games with weak native antialiasing. Suitable test cases included Frostpunk, Dyson Sphere Program, Minecraft, and 3D games running in Android emulators. In some scenes, the subjective result was better than FSR1.
+
+Without real depth and motion vectors, moving objects, camera motion, and disocclusion can still produce ghosting or history trails. Additional model/preset comparisons made through external overrides suggested an antialiasing and smoothing order of roughly `L > M > J/K > CNN`, while resistance to ghosting often followed the opposite trend. L and M appeared more dependent on correct temporal inputs: they have high potential in native integrations, but may also retain incorrect history longer when auxiliary data is missing. This comparison does not mean these choices are built into Magpie; the public source currently requests Balanced mode and Preset J.
+
+#### FSR 2.2.1
+
+FSR2 provides Zero-MV and 50%-resolution colour optical-flow paths. In static or low-motion scenes, edge quality and stability could subjectively exceed FSR1, but history artefacts remained possible in motion. Colour optical flow did not consistently outperform Zero-MV and was worse in some scenes, possibly because of errors in flow direction, scale, occlusion, or non-rigid motion. The optical-flow mode therefore remains a research and comparison feature.
+
+#### NVIDIA RTX Video
+
+RTX Video provides same-resolution denoising and true VSR upscaling. VSR produced particularly visible improvements in visual novels, Galgames, and some low-resolution 2D content, cleaning compression noise and improving blurred lines, text, and character edges. This is currently the clearest use case among the experimental integrations. The trade-off is package size: the NVIDIA VFX runtime and models make the complete experimental distribution approximately 508 MiB.
+
 ### External development dependencies
 
 Third-party SDKs, models, wheels, and proprietary NVIDIA binaries are not part of this source repository. Obtain them from their original publishers and accept their respective licenses:
