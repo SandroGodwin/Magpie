@@ -37,6 +37,7 @@ struct FSR3ZeroMVUpscaler::Impl {
 	winrt::com_ptr<ID3D12Fence> fence12;
 	std::unique_ptr<HalfResOpticalFlow> opticalFlow;
 	HMODULE loaderModule = nullptr;
+	HMODULE providerModule = nullptr;
 	decltype(&ffxCreateContext) createContext = nullptr;
 	decltype(&ffxDestroyContext) destroyContext = nullptr;
 	decltype(&ffxDispatch) dispatch = nullptr;
@@ -53,6 +54,9 @@ struct FSR3ZeroMVUpscaler::Impl {
 	uint32_t outputWidth = 0;
 	uint32_t outputHeight = 0;
 	bool enableOpticalFlow = false;
+	bool enableJitter = false;
+	bool useFsr4 = false;
+	uint32_t frameIndex = 0;
 	bool resetHistory = true;
 };
 
@@ -78,6 +82,107 @@ FSR3ZeroMVUpscaler::Impl::~Impl() {
 	if (queue12 && fence12) WaitForQueue(*this);
 	if (context && destroyContext) destroyContext(&context, nullptr);
 	if (loaderModule) FreeLibrary(loaderModule);
+	if (providerModule) FreeLibrary(providerModule);
+}
+
+static bool IsAddressInExecutableSection(
+	const uint8_t* base,
+	const IMAGE_NT_HEADERS* nt,
+	const void* address
+) noexcept {
+	const uintptr_t value = reinterpret_cast<uintptr_t>(address);
+	for (const IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+		section != IMAGE_FIRST_SECTION(nt) + nt->FileHeader.NumberOfSections; ++section) {
+		if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+		const uintptr_t begin = reinterpret_cast<uintptr_t>(base) + section->VirtualAddress;
+		const uintptr_t end = begin + std::max(section->Misc.VirtualSize, section->SizeOfRawData);
+		if (value >= begin && value < end) return true;
+	}
+	return false;
+}
+
+// FSR 4.1.1 contains a dedicated INT8 provider but hides it when IsSupported
+// rejects the real adapter. Patch only that provider's virtual support check in
+// this process. This avoids changing the system adapter identity or other apps.
+static bool ForceFsr4Int8ProviderSupport(HMODULE module) noexcept {
+	if (!module) return false;
+	uint8_t* base = reinterpret_cast<uint8_t*>(module);
+	const IMAGE_DOS_HEADER* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+	const IMAGE_NT_HEADERS* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+
+	constexpr char typeName[] = ".?AVffxProvider_FSR4_Int8@@";
+	const uint8_t* typeNameAddress = nullptr;
+	const IMAGE_SECTION_HEADER* sections = IMAGE_FIRST_SECTION(nt);
+	for (uint16_t i = 0; i < nt->FileHeader.NumberOfSections && !typeNameAddress; ++i) {
+		const IMAGE_SECTION_HEADER& section = sections[i];
+		if (!(section.Characteristics & IMAGE_SCN_MEM_READ)) continue;
+		const uint8_t* begin = base + section.VirtualAddress;
+		const size_t size = std::max(section.Misc.VirtualSize, section.SizeOfRawData);
+		if (size < sizeof(typeName)) continue;
+		for (size_t offset = 0; offset + sizeof(typeName) <= size; ++offset) {
+			if (memcmp(begin + offset, typeName, sizeof(typeName)) == 0) {
+				typeNameAddress = begin + offset;
+				break;
+			}
+		}
+	}
+	if (!typeNameAddress || typeNameAddress < base + 2 * sizeof(void*)) return false;
+
+	// MSVC x64 TypeDescriptor stores two pointers immediately before its name.
+	const uint8_t* typeDescriptor = typeNameAddress - 2 * sizeof(void*);
+	const uint32_t typeDescriptorRva = static_cast<uint32_t>(typeDescriptor - base);
+	struct CompleteObjectLocator {
+		uint32_t signature;
+		uint32_t offset;
+		uint32_t cdOffset;
+		uint32_t typeDescriptorRva;
+		uint32_t classDescriptorRva;
+		uint32_t selfRva;
+	};
+
+	for (uint16_t i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+		const IMAGE_SECTION_HEADER& colSection = sections[i];
+		if (!(colSection.Characteristics & IMAGE_SCN_MEM_READ)) continue;
+		uint8_t* colBegin = base + colSection.VirtualAddress;
+		const size_t colSize = std::max(colSection.Misc.VirtualSize, colSection.SizeOfRawData);
+		for (size_t colOffset = 0; colOffset + sizeof(CompleteObjectLocator) <= colSize;
+			colOffset += alignof(uint32_t)) {
+			const auto* col = reinterpret_cast<const CompleteObjectLocator*>(colBegin + colOffset);
+			const uint32_t colRva = static_cast<uint32_t>(colBegin + colOffset - base);
+			if (col->signature != 1 || col->typeDescriptorRva != typeDescriptorRva ||
+				col->selfRva != colRva) continue;
+
+			const uintptr_t colAddress = reinterpret_cast<uintptr_t>(col);
+			for (uint16_t j = 0; j < nt->FileHeader.NumberOfSections; ++j) {
+				const IMAGE_SECTION_HEADER& tableSection = sections[j];
+				if (!(tableSection.Characteristics & IMAGE_SCN_MEM_READ)) continue;
+				uint8_t* tableBegin = base + tableSection.VirtualAddress;
+				const size_t tableSize = std::max(tableSection.Misc.VirtualSize, tableSection.SizeOfRawData);
+				for (size_t tableOffset = 0; tableOffset + 4 * sizeof(void*) <= tableSize;
+					tableOffset += alignof(void*)) {
+					const auto* locatorPointer = reinterpret_cast<const uintptr_t*>(tableBegin + tableOffset);
+					if (*locatorPointer != colAddress) continue;
+					void** vtable = reinterpret_cast<void**>(tableBegin + tableOffset + sizeof(void*));
+					// MSVC order: deleting destructor, CanProvide, IsSupported.
+					uint8_t* supportFunction = reinterpret_cast<uint8_t*>(vtable[2]);
+					if (!IsAddressInExecutableSection(base, nt, supportFunction)) continue;
+
+					DWORD oldProtect = 0;
+					if (!VirtualProtect(supportFunction, 6, PAGE_EXECUTE_READWRITE, &oldProtect)) return false;
+					const uint8_t returnTrue[]{ 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 };
+					memcpy(supportFunction, returnTrue, sizeof(returnTrue));
+					FlushInstructionCache(GetCurrentProcess(), supportFunction, sizeof(returnTrue));
+					DWORD ignored = 0;
+					VirtualProtect(supportFunction, 6, oldProtect, &ignored);
+					Logger::Get().Info("Enabled process-local FSR 4.1.1 INT8 provider support override");
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 static bool CreateSharedTexture(
@@ -161,14 +266,21 @@ bool FSR3ZeroMVUpscaler::Initialize(
 	DeviceResources& resources,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output,
-	bool enableOpticalFlow
+	bool enableOpticalFlow,
+	bool enableJitter,
+	bool useFsr4
 ) noexcept {
 	_enableOpticalFlow = enableOpticalFlow;
+	_enableJitter = enableJitter;
+	_useFsr4 = useFsr4;
 	_impl.reset();
 	auto impl = std::make_unique<Impl>();
 	impl->device11 = resources.GetD3DDevice();
 	impl->context11 = resources.GetD3DDC();
 	impl->enableOpticalFlow = enableOpticalFlow;
+	impl->enableJitter = enableJitter;
+	impl->useFsr4 = useFsr4;
+	const char* upscalerName = useFsr4 ? "FSR 4.1.1" : "FSR 3.1.5";
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
 	D3D11_TEXTURE2D_DESC outputDesc{};
@@ -240,7 +352,9 @@ bool FSR3ZeroMVUpscaler::Initialize(
 	const float zero[4]{};
 	const float one[4]{ 1, 1, 1, 1 };
 	const float reactive02[4]{ 0.2f, 0.2f, 0.2f, 0.2f };
+	const float reactiveFsr4OpticalFlow[4]{ 0.8f, 0.8f, 0.8f, 0.8f };
 	const float reactive08[4]{ 0.8f, 0.8f, 0.8f, 0.8f };
+	const float reactiveFsr4ZeroMv[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
 	auto addAux = [&](DXGI_FORMAT format, uint32_t width, uint32_t height,
 		winrt::com_ptr<ID3D12Resource>& texture, const float value[4]) -> bool {
 		if (!CreateAuxTexture(*impl, format, width, height, texture, cpu, gpu, value,
@@ -253,7 +367,8 @@ bool FSR3ZeroMVUpscaler::Initialize(
 	if (!addAux(DXGI_FORMAT_R32_FLOAT, inputDesc.Width, inputDesc.Height, impl->flatDepth12, zero) ||
 		!addAux(DXGI_FORMAT_R32_FLOAT, 1, 1, impl->exposure12, one) ||
 		!addAux(DXGI_FORMAT_R8_UNORM, inputDesc.Width, inputDesc.Height, impl->reactive12,
-			enableOpticalFlow ? reactive02 : reactive08) ||
+			useFsr4 ? (enableOpticalFlow ? reactiveFsr4OpticalFlow : reactiveFsr4ZeroMv) :
+				(enableOpticalFlow ? reactive02 : reactive08)) ||
 		!addAux(DXGI_FORMAT_R8_UNORM, inputDesc.Width, inputDesc.Height, impl->transparency12, zero)) {
 		return false;
 	}
@@ -273,6 +388,18 @@ bool FSR3ZeroMVUpscaler::Initialize(
 	wil::unique_handle fenceHandle(rawFence);
 	hr = impl->device12->OpenSharedHandle(fenceHandle.get(), IID_PPV_ARGS(impl->fence12.put()));
 	if (FAILED(hr) || !WaitForQueue(*impl)) return false;
+
+	if (useFsr4) {
+		impl->providerModule = LoadLibraryW(L"amd_fidelityfx_upscaler_dx12.dll");
+		if (!impl->providerModule) {
+			Logger::Get().Win32Error("Load FSR 4.1.1 provider DLL failed");
+			return false;
+		}
+		if (!ForceFsr4Int8ProviderSupport(impl->providerModule)) {
+			Logger::Get().Error("Locate FSR 4.1.1 INT8 provider support check failed");
+			return false;
+		}
+	}
 
 	impl->loaderModule = LoadLibraryW(L"amd_fidelityfx_loader_dx12.dll");
 	if (!impl->loaderModule) {
@@ -309,16 +436,17 @@ bool FSR3ZeroMVUpscaler::Initialize(
 	versionQuery.versionNames = versionNames.data();
 	rc = impl->query(nullptr, &versionQuery.header);
 	if (rc != FFX_API_RETURN_OK) return false;
-	uint64_t fsr3VersionId = 0;
+	uint64_t selectedVersionId = 0;
+	const char* requestedVersion = useFsr4 ? "4.1.1" : "3.1.5";
 	std::string availableVersions;
 	for (uint64_t i = 0; i < versionCount; ++i) {
 		const char* name = versionNames[i] ? versionNames[i] : "unknown";
 		if (!availableVersions.empty()) availableVersions += ", ";
 		availableVersions += name;
-		if (strstr(name, "3.1.5")) fsr3VersionId = versionIds[i];
+		if (strstr(name, requestedVersion)) selectedVersionId = versionIds[i];
 	}
-	if (!fsr3VersionId) {
-		Logger::Get().Error(fmt::format("FSR 3.1.5 provider not found; available: {}", availableVersions));
+	if (!selectedVersionId) {
+		Logger::Get().Error(fmt::format("{} provider not found; available: {}", upscalerName, availableVersions));
 		return false;
 	}
 
@@ -332,25 +460,41 @@ bool FSR3ZeroMVUpscaler::Initialize(
 	impl->apiVersion.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE_VERSION;
 	impl->apiVersion.version = FFX_UPSCALER_VERSION;
 	impl->overrideVersion.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
-	impl->overrideVersion.versionId = fsr3VersionId;
+	impl->overrideVersion.versionId = selectedVersionId;
 	impl->createDesc.header.pNext = &impl->backendDesc.header;
 	impl->backendDesc.header.pNext = &impl->apiVersion.header;
 	impl->apiVersion.header.pNext = &impl->overrideVersion.header;
 	rc = impl->createContext(&impl->context, &impl->createDesc.header, nullptr);
 	if (rc != FFX_API_RETURN_OK || !impl->context) {
-		Logger::Get().Error(fmt::format("Create FSR 3.1.5 context failed ({})", (uint32_t)rc));
+		const char* hint = useFsr4
+			? "; FSR4 INT8 may still be rejected by GPU capability detection"
+			: "";
+		Logger::Get().Error(fmt::format("Create {} context failed ({}){}",
+			upscalerName, (uint32_t)rc, hint));
 		return false;
 	}
 	Logger::Get().Info(fmt::format(
-		"FSR 3.1.5 D3D11/D3D12 backend initialized (opticalFlow={}, virtual auxiliary inputs): {}x{} -> {}x{}",
-		enableOpticalFlow, inputDesc.Width, inputDesc.Height, outputDesc.Width, outputDesc.Height));
+		"{} D3D11/D3D12 backend initialized (opticalFlow={}, jitter={}, virtual auxiliary inputs): {}x{} -> {}x{}",
+		upscalerName, enableOpticalFlow, enableJitter,
+		inputDesc.Width, inputDesc.Height, outputDesc.Width, outputDesc.Height));
 	_impl = std::move(impl);
 	return true;
 }
 
 bool FSR3ZeroMVUpscaler::Resize(DeviceResources& resources, ID3D11Texture2D* input,
 	ID3D11Texture2D* output) noexcept {
-	return Initialize(resources, input, output, _enableOpticalFlow);
+	return Initialize(resources, input, output, _enableOpticalFlow, _enableJitter, _useFsr4);
+}
+
+static float Halton(uint32_t index, uint32_t base) noexcept {
+	float result = 0.0f;
+	float fraction = 1.0f;
+	while (index) {
+		fraction /= (float)base;
+		result += fraction * (float)(index % base);
+		index /= base;
+	}
+	return result;
 }
 
 bool FSR3ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
@@ -400,7 +544,13 @@ bool FSR3ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	desc.transparencyAndComposition = ffxApiGetResourceDX12(
 		impl.transparency12.get(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
 	desc.output = ffxApiGetResourceDX12(impl.sharedOutput12.get(), FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
-	desc.jitterOffset = { 0.0f, 0.0f };
+	if (impl.enableJitter) {
+		// Metadata-only jitter: the captured source frame itself is not projection-jittered.
+		const uint32_t sample = (impl.frameIndex++ & 7u) + 1u;
+		desc.jitterOffset = { Halton(sample, 2) - 0.5f, Halton(sample, 3) - 0.5f };
+	} else {
+		desc.jitterOffset = { 0.0f, 0.0f };
+	}
 	desc.motionVectorScale = { 1.0f, 1.0f };
 	desc.renderSize = { impl.inputWidth, impl.inputHeight };
 	desc.upscaleSize = { impl.outputWidth, impl.outputHeight };
@@ -416,7 +566,8 @@ bool FSR3ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	desc.flags = FFX_UPSCALE_FLAG_NON_LINEAR_COLOR_SRGB;
 	const ffxReturnCode_t rc = impl.dispatch(&impl.context, &desc.header);
 	if (rc != FFX_API_RETURN_OK) {
-		Logger::Get().Error(fmt::format("Dispatch FSR 3.1.5 failed ({})", (uint32_t)rc));
+		Logger::Get().Error(fmt::format("Dispatch {} failed ({})",
+			impl.useFsr4 ? "FSR 4.1.1" : "FSR 3.1.5", (uint32_t)rc));
 		return false;
 	}
 	for (UINT i = 0; i < barrierCount; ++i) {
@@ -445,7 +596,7 @@ namespace Magpie {
 struct FSR3ZeroMVUpscaler::Impl {};
 FSR3ZeroMVUpscaler::FSR3ZeroMVUpscaler() = default;
 FSR3ZeroMVUpscaler::~FSR3ZeroMVUpscaler() = default;
-bool FSR3ZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool) noexcept {
+bool FSR3ZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool, bool, bool) noexcept {
 	Logger::Get().Error("FSR3 support is not enabled in this build");
 	return false;
 }

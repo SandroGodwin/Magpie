@@ -552,35 +552,45 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 		}
 
 		if (effects[i].name == "FSR2\\FSR2_ZeroMV" ||
+			effects[i].name == "FSR2\\FSR2_ZeroMV_Jitter" ||
 			effects[i].name == "FSR2\\FSR2_OpticalFlow") {
 			auto upscaler = std::make_unique<FSR2ZeroMVUpscaler>();
 			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
 				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name == "FSR2\\FSR2_OpticalFlow")) {
+				effects[i].name == "FSR2\\FSR2_OpticalFlow",
+				effects[i].name == "FSR2\\FSR2_ZeroMV_Jitter")) {
 				Logger::Get().Error("Initialize FSR2 Zero-MV failed");
 				return nullptr;
 			}
 			_fsr2ZeroMVUpscalers[i] = std::move(upscaler);
 		}
 
-		if (effects[i].name == "FSR3\\FSR3_ZeroMV" ||
-			effects[i].name == "FSR3\\FSR3_OpticalFlow") {
+		const bool isFsr3 = effects[i].name == "FSR3\\FSR3_ZeroMV" ||
+			effects[i].name == "FSR3\\FSR3_ZeroMV_Jitter" ||
+			effects[i].name == "FSR3\\FSR3_OpticalFlow";
+		const bool isFsr4 = effects[i].name == "FSR4\\FSR4_ZeroMV" ||
+			effects[i].name == "FSR4\\FSR4_ZeroMV_Jitter" ||
+			effects[i].name == "FSR4\\FSR4_OpticalFlow";
+		if (isFsr3 || isFsr4) {
 			auto upscaler = std::make_unique<FSR3ZeroMVUpscaler>();
 			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
 				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name == "FSR3\\FSR3_OpticalFlow")) {
-				Logger::Get().Error("Initialize FSR3 Zero-MV failed");
+				effects[i].name.ends_with("OpticalFlow"),
+				effects[i].name.ends_with("ZeroMV_Jitter"), isFsr4)) {
+				Logger::Get().Error(isFsr4 ? "Initialize FSR4 failed" : "Initialize FSR3 failed");
 				return nullptr;
 			}
 			_fsr3ZeroMVUpscalers[i] = std::move(upscaler);
 		}
 
 		if (effects[i].name == "XeSS\\XeSS_ZeroMV" ||
+			effects[i].name == "XeSS\\XeSS_ZeroMV_Jitter" ||
 			effects[i].name == "XeSS\\XeSS_OpticalFlow") {
 			auto upscaler = std::make_unique<XeSSZeroMVUpscaler>();
 			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
 				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name == "XeSS\\XeSS_OpticalFlow")) {
+				effects[i].name == "XeSS\\XeSS_OpticalFlow",
+				effects[i].name == "XeSS\\XeSS_ZeroMV_Jitter")) {
 				Logger::Get().Error("Initialize XeSS Zero-MV failed");
 				return nullptr;
 			}

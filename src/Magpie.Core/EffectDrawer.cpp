@@ -14,6 +14,22 @@
 
 namespace Magpie {
 
+static bool ClearEffectTexture(
+	ID3D11DeviceContext* d3dDC,
+	BackendDescriptorStore& descriptorStore,
+	ID3D11Texture2D* texture
+) noexcept {
+	ID3D11UnorderedAccessView* uav = descriptorStore.GetUnorderedAccessView(texture);
+	if (!uav) {
+		Logger::Get().Error("GetUnorderedAccessView failed while clearing an effect texture");
+		return false;
+	}
+
+	const float clearValue[4]{};
+	d3dDC->ClearUnorderedAccessViewFloat(uav, clearValue);
+	return true;
+}
+
 EffectDrawer::~EffectDrawer() {
 	// [0] 为输入，由前一个 EffectDrawer 管理
 	const uint32_t textureCount = (uint32_t)_textures.size();
@@ -78,6 +94,9 @@ bool EffectDrawer::Initialize(
 		Logger::Get().Error("创建输出纹理失败");
 		return false;
 	}
+	if (!ClearEffectTexture(_d3dDC, descriptorStore, _textures[1].get())) {
+		return false;
+	}
 
 	for (size_t i = 2; i < desc.textures.size(); ++i) {
 		const EffectIntermediateTextureDesc& texDesc = desc.textures[i];
@@ -130,6 +149,9 @@ bool EffectDrawer::Initialize(
 			);
 			if (!_textures[i]) {
 				Logger::Get().Error("创建纹理失败");
+				return false;
+			}
+			if (!ClearEffectTexture(_d3dDC, descriptorStore, _textures[i].get())) {
 				return false;
 			}
 		}
@@ -229,6 +251,9 @@ bool EffectDrawer::ResizeTextures(
 			Logger::Get().Error("创建输出纹理失败");
 			return false;
 		}
+		if (!ClearEffectTexture(_d3dDC, *_descriptorStore, _textures[1].get())) {
+			return false;
+		}
 
 		anyChange = true;
 	}
@@ -273,6 +298,9 @@ bool EffectDrawer::ResizeTextures(
 
 			if (!_textures[i]) {
 				Logger::Get().Error("创建纹理失败");
+				return false;
+			}
+			if (!ClearEffectTexture(_d3dDC, *_descriptorStore, _textures[i].get())) {
 				return false;
 			}
 

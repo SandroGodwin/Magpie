@@ -44,15 +44,18 @@ void FSR2ZeroMVUpscaler::_Reset() noexcept {
 	_d3dDC = nullptr;
 	_resetHistory = true;
 	_enableOpticalFlow = false;
+	_enableJitter = false;
+	_frameIndex = 0;
 	_opticalFlow.reset();
 }
 
 bool FSR2ZeroMVUpscaler::Initialize(
 	DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output,
-	bool enableOpticalFlow
+	bool enableOpticalFlow, bool enableJitter
 ) noexcept {
 	_Reset();
 	_enableOpticalFlow = enableOpticalFlow;
+	_enableJitter = enableJitter;
 	_device = resources.GetD3DDevice();
 	_d3dDC = resources.GetD3DDC();
 	D3D11_TEXTURE2D_DESC inDesc{}, outDesc{};
@@ -120,14 +123,26 @@ bool FSR2ZeroMVUpscaler::Initialize(
 	ec = reinterpret_cast<decltype(&ffxFsr2ContextCreate)>(_contextCreate)(
 		static_cast<FfxFsr2Context*>(_context), &desc);
 	if (ec != FFX_OK) { Logger::Get().Error(fmt::format("ffxFsr2ContextCreate failed ({})", (int)ec)); _Reset(); return false; }
-	Logger::Get().Info(fmt::format("FSR2 D3D11 initialized (opticalFlow={}): {}x{} -> {}x{}",
-		_enableOpticalFlow, inDesc.Width, inDesc.Height, outDesc.Width, outDesc.Height));
+	Logger::Get().Info(fmt::format("FSR2 D3D11 initialized (opticalFlow={}, jitter={}): {}x{} -> {}x{}",
+		_enableOpticalFlow, _enableJitter, inDesc.Width, inDesc.Height, outDesc.Width, outDesc.Height));
 	return true;
 }
 
 bool FSR2ZeroMVUpscaler::Resize(DeviceResources& r, ID3D11Texture2D* i, ID3D11Texture2D* o) noexcept {
 	const bool enableOpticalFlow = _enableOpticalFlow;
-	return Initialize(r, i, o, enableOpticalFlow);
+	const bool enableJitter = _enableJitter;
+	return Initialize(r, i, o, enableOpticalFlow, enableJitter);
+}
+
+static float Halton(uint32_t index, uint32_t base) noexcept {
+	float result = 0.0f;
+	float fraction = 1.0f;
+	while (index) {
+		fraction /= (float)base;
+		result += fraction * (float)(index % base);
+		index /= base;
+	}
+	return result;
 }
 
 bool FSR2ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
@@ -161,6 +176,13 @@ bool FSR2ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	// HalfResOpticalFlow stores motion directly in pixel units, so no render-size
 	// multiplication is needed. Applying width/height here made OF vectors huge.
 	d.motionVectorScale = { 1.0f, 1.0f };
+	if (_enableJitter) {
+		// Metadata-only jitter: Magpie cannot modify the source application's projection.
+		const uint32_t sample = (_frameIndex++ & 7u) + 1u;
+		d.jitterOffset = { Halton(sample, 2) - 0.5f, Halton(sample, 3) - 0.5f };
+	} else {
+		d.jitterOffset = { 0.0f, 0.0f };
+	}
 	d.renderSize = { inDesc.Width, inDesc.Height };
 	d.enableSharpening = true;
 	d.sharpness = 0.2f;
@@ -183,7 +205,7 @@ bool FSR2ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 namespace Magpie {
 FSR2ZeroMVUpscaler::~FSR2ZeroMVUpscaler() = default;
 void FSR2ZeroMVUpscaler::_Reset() noexcept {}
-bool FSR2ZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool) noexcept { return false; }
+bool FSR2ZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool, bool) noexcept { return false; }
 bool FSR2ZeroMVUpscaler::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept { return false; }
 bool FSR2ZeroMVUpscaler::Draw(ID3D11Texture2D*, ID3D11Texture2D*) noexcept { return false; }
 }

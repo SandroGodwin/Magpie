@@ -1246,6 +1246,10 @@ float2 GetOutputPt() { return __outputPt; }
 float2 GetScale() { return __scale; }
 )");
 
+	if (desc.flags & EffectFlags::UseDynamic) {
+		result.append("uint GetFrameCount() { return __frameCount; }\n");
+	}
+
 	if (desc.flags & EffectFlags::UseMulAdd) {
 		// 使用 mad 而不是 mul，经测试这可以大幅提高性能，且和 FP16 的兼容性更好。
 		// 见 GH#1049

@@ -13,7 +13,7 @@ public:
 	~FSR2ZeroMVUpscaler();
 
 	bool Initialize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output,
-		bool enableOpticalFlow = false) noexcept;
+		bool enableOpticalFlow = false, bool enableJitter = false) noexcept;
 	bool Resize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept;
 	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept;
 
@@ -42,6 +42,8 @@ private:
 	winrt::com_ptr<ID3D11UnorderedAccessView> _reactiveUav;
 	bool _resetHistory = true;
 	bool _enableOpticalFlow = false;
+	bool _enableJitter = false;
+	uint32_t _frameIndex = 0;
 	std::unique_ptr<HalfResOpticalFlow> _opticalFlow;
 };
 

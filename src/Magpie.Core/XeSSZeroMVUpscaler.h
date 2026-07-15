@@ -19,7 +19,8 @@ public:
 		DeviceResources& deviceResources,
 		ID3D11Texture2D* input,
 		ID3D11Texture2D* output,
-		bool enableOpticalFlow = false
+		bool enableOpticalFlow = false,
+		bool enableJitter = false
 	) noexcept;
 
 	bool Resize(
@@ -33,6 +34,7 @@ public:
 private:
 	std::unique_ptr<Impl> _impl;
 	bool _enableOpticalFlow = false;
+	bool _enableJitter = false;
 };
 
 }

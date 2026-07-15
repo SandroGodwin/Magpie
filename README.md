@@ -24,12 +24,20 @@ This repository is an independent experimental fork of [Blinue/Magpie](https://g
 The fork owner used OpenAI Codex as a development assistant to add and test experimental colour-frame-only integrations for:
 
 - NVIDIA DLSS Super Resolution with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
-- AMD FidelityFX Super Resolution 2.2.1 with zero motion vectors or 50%-resolution colour optical flow.
-- AMD FidelityFX Super Resolution 3.1.5 upscaling (without frame generation) through D3D11/D3D12 interoperability, with zero motion vectors or 50%-resolution colour optical flow.
-- Intel XeSS 3.0.1 Super Resolution with zero motion vectors or 50%-resolution colour optical flow through D3D11/D3D12 interoperability.
+- AMD FidelityFX Super Resolution 2.2.1 with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
+- AMD FidelityFX Super Resolution 3.1.5 upscaling (without frame generation) through D3D11/D3D12 interoperability, with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
+- AMD FidelityFX Super Resolution 4.1.1 INT8 with experimental Zero-MV, synthetic-jitter, and 50%-resolution colour-optical-flow modes.
+- Intel XeSS 3.0.1 Super Resolution with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow through D3D11/D3D12 interoperability.
 - NVIDIA VideoSuperRes for same-resolution denoising and VSR upscaling.
+- MLAA and captured-colour-frame approximations of SMAA T2x/4x, with jittered and non-jittered variants.
 
 These integrations do not have access to the real depth, motion vectors, exposure, reactive masks, or projection jitter produced by a game engine. They may therefore produce ghosting, unstable detail, or worse image quality than a native in-game integration. They are research prototypes, not replacements for native DLSS or FSR support.
+
+### New in this version
+
+- Added FSR 4.1.1 INT8 with a process-local bypass of its `IsSupported(device)` check so that non-AMD GPUs can attempt to run it. In limited testing, its image quality was roughly comparable to the DLSS CNN/J-K models and it remains an unrecommended compatibility experiment.
+- Added synthetic-jitter modes for FSR2, FSR3, FSR4, and XeSS. Only the DLSS synthetic-jitter path produced usable results; the synthetic-jitter modes of the other models were visually unusable and are not recommended.
+- Added MLAA and experimental captured-frame SMAA T2x/4x Effects; both SMAA modes have jittered and non-jittered variants.
 
 ### Initial test observations
 

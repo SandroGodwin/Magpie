@@ -24,12 +24,20 @@ Magpie 是一个轻量级的窗口超分辨率工具，内置众多高效的算�
 Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终颜色帧的实验功能：
 
 - NVIDIA DLSS Super Resolution：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
-- AMD FidelityFX Super Resolution 2.2.1：零运动向量或 50% 分辨率颜色光流。
-- AMD FidelityFX Super Resolution 3.1.5 上采样（不含帧生成）：通过 D3D11/D3D12 互操作提供零运动向量或 50% 分辨率颜色光流模式。
-- Intel XeSS 3.0.1 Super Resolution：通过 D3D11/D3D12 互操作提供零运动向量或 50% 分辨率颜色光流模式。
+- AMD FidelityFX Super Resolution 2.2.1：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
+- AMD FidelityFX Super Resolution 3.1.5 上采样（不含帧生成）：通过 D3D11/D3D12 互操作提供零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流模式。
+- AMD FidelityFX Super Resolution 4.1.1 INT8：提供 Zero-MV、伪 jitter 和 50% 分辨率颜色光流实验模式。
+- Intel XeSS 3.0.1 Super Resolution：通过 D3D11/D3D12 互操作提供零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流模式。
 - NVIDIA VideoSuperRes：同分辨率降噪和 VSR 放大。
+- MLAA，以及基于捕获颜色帧近似实现的 SMAA T2x/4x（含 jitter 与无 jitter 版本）。
 
 这些接入无法获得游戏引擎提供的真实深度、运动向量、曝光、反应遮罩和投影 jitter，因此可能出现拖影、细节不稳定，效果也可能弱于游戏原生接入。它们属于研究原型，不能视为原生 DLSS 或 FSR 的替代品。
+
+### 本次新增
+
+- 加入 FSR 4.1.1 INT8，并在 Magpie 进程内绕过其 `IsSupported(device)` 检查，使其他厂商显卡也可以尝试运行。有限测试中的画质大致处于 DLSS CNN/J-K 模型的水平，仍属于不推荐的兼容性实验。
+- 为 FSR2、FSR3、FSR4 和 XeSS 增加伪 jitter 模式。当前只有 DLSS 的伪 jitter 结果可以使用；其他模型的伪 jitter 实测画面完全不可用，不作推荐。
+- 加入 MLAA，以及 SMAA T2x/4x 的捕获帧实验实现；SMAA T2x/4x 均提供 jitter 和无 jitter 版本。
 
 ### 初步测试观察
 

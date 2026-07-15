@@ -6,7 +6,22 @@
     <CopyFileToFolders Include="Lanczos.hlsl" />
     <CopyFileToFolders Include="SSimDownscaler.hlsl" />
     <CopyFileToFolders Include="ImageAdjustment.hlsl" />
+    <CopyFileToFolders Include="MLAA\MLAA.hlsl">
+      <Filter>MLAA</Filter>
+    </CopyFileToFolders>
     <CopyFileToFolders Include="SMAA\SMAA.hlsli">
+      <Filter>SMAA</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="SMAA\SMAA_T2x_Experimental.hlsl">
+      <Filter>SMAA</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="SMAA\SMAA_4x_Experimental.hlsl">
+      <Filter>SMAA</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="SMAA\SMAA_T2x_NoJitter_Experimental.hlsl">
+      <Filter>SMAA</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="SMAA\SMAA_4x_NoJitter_Experimental.hlsl">
       <Filter>SMAA</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="SMAA\SMAA_High.hlsl">
@@ -455,6 +470,9 @@
     <CopyFileToFolders Include="k7_modernAnime_FHD_x2.hlsl" />
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="MLAA">
+      <UniqueIdentifier>{F894808F-A62A-47B3-B05D-764C407CE955}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Anime4K">
       <UniqueIdentifier>{698d22a6-2a44-4262-a38e-76581d788a99}</UniqueIdentifier>
     </Filter>

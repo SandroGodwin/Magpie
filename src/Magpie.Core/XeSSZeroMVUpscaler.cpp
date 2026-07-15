@@ -44,6 +44,8 @@ struct XeSSZeroMVUpscaler::Impl {
 	uint64_t lastSubmittedValue = 0;
 	bool convertInputToRgba = false;
 	bool enableOpticalFlow = false;
+	bool enableJitter = false;
+	uint32_t frameIndex = 0;
 	bool resetHistory = true;
 };
 
@@ -172,12 +174,15 @@ bool XeSSZeroMVUpscaler::Initialize(
 	DeviceResources& deviceResources,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output,
-	bool enableOpticalFlow
+	bool enableOpticalFlow,
+	bool enableJitter
 ) noexcept {
 	_enableOpticalFlow = enableOpticalFlow;
+	_enableJitter = enableJitter;
 	_impl.reset();
 	auto impl = std::make_unique<Impl>();
 	impl->enableOpticalFlow = enableOpticalFlow;
+	impl->enableJitter = enableJitter;
 	impl->device11 = deviceResources.GetD3DDevice();
 	impl->context11 = deviceResources.GetD3DDC();
 
@@ -435,8 +440,9 @@ bool XeSSZeroMVUpscaler::Initialize(
 	}
 
 	Logger::Get().Info(fmt::format(
-		"XeSS experimental D3D11/D3D12 backend initialized (quality {}, {}, BGRA conversion={}): {}x{} -> {}x{}",
-		(int)quality, impl->enableOpticalFlow ? "OpticalFlow50" : "Zero-MV", impl->convertInputToRgba,
+		"XeSS experimental D3D11/D3D12 backend initialized (quality {}, {}, jitter={}, BGRA conversion={}): {}x{} -> {}x{}",
+		(int)quality, impl->enableOpticalFlow ? "OpticalFlow50" : "Zero-MV", impl->enableJitter,
+		impl->convertInputToRgba,
 		inputDesc.Width, inputDesc.Height, outputDesc.Width, outputDesc.Height));
 	_impl = std::move(impl);
 	return true;
@@ -447,7 +453,18 @@ bool XeSSZeroMVUpscaler::Resize(
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output
 ) noexcept {
-	return Initialize(deviceResources, input, output, _enableOpticalFlow);
+	return Initialize(deviceResources, input, output, _enableOpticalFlow, _enableJitter);
+}
+
+static float Halton(uint32_t index, uint32_t base) noexcept {
+	float result = 0.0f;
+	float fraction = 1.0f;
+	while (index) {
+		fraction /= (float)base;
+		result += fraction * (float)(index % base);
+		index /= base;
+	}
+	return result;
 }
 
 bool XeSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
@@ -524,6 +541,15 @@ bool XeSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	params.pDepthTexture = impl.flatDepth12.get();
 	params.pResponsivePixelMaskTexture = impl.responsiveMask12.get();
 	params.pOutputTexture = impl.sharedOutput12.get();
+	if (impl.enableJitter) {
+		// Metadata-only jitter: the source application's projection is unchanged.
+		const uint32_t sample = (impl.frameIndex++ & 7u) + 1u;
+		params.jitterOffsetX = Halton(sample, 2) - 0.5f;
+		params.jitterOffsetY = Halton(sample, 3) - 0.5f;
+	} else {
+		params.jitterOffsetX = 0.0f;
+		params.jitterOffsetY = 0.0f;
+	}
 	params.exposureScale = 1.0f;
 	params.resetHistory = impl.resetHistory ? 1u : 0u;
 	params.inputWidth = impl.inputWidth;
@@ -565,7 +591,7 @@ namespace Magpie {
 struct XeSSZeroMVUpscaler::Impl {};
 XeSSZeroMVUpscaler::XeSSZeroMVUpscaler() = default;
 XeSSZeroMVUpscaler::~XeSSZeroMVUpscaler() = default;
-bool XeSSZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool) noexcept {
+bool XeSSZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool, bool) noexcept {
 	Logger::Get().Error("XeSS Zero-MV support is not enabled in this build");
 	return false;
 }
