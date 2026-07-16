@@ -33,13 +33,6 @@ The fork owner used OpenAI Codex as a development assistant to add and test expe
 
 These integrations do not have access to the real depth, motion vectors, exposure, reactive masks, or projection jitter produced by a game engine. They may therefore produce ghosting, unstable detail, or worse image quality than a native in-game integration. They are research prototypes, not replacements for native DLSS or FSR support.
 
-### New in this version
-
-- Added FSR 4.1.1 INT8 with a process-local bypass of its `IsSupported(device)` check so that non-AMD GPUs can attempt to run it. In limited testing, its image quality was roughly comparable to the DLSS CNN/J-K models and it remains an unrecommended compatibility experiment.
-- Added synthetic-jitter modes for FSR2, FSR3, FSR4, and XeSS. Only the DLSS synthetic-jitter path produced usable results; the synthetic-jitter modes of the other models were visually unusable and are not recommended.
-- Added MLAA and experimental captured-frame SMAA T2x/4x Effects; both SMAA modes have jittered and non-jittered variants.
-- Added an optional Smooth Motion compatibility mode that restarts Magpie after each scaling session to release GPU memory retained by NVIDIA Smooth Motion. It is disabled by default.
-
 ### Initial test observations
 
 The following observations are subjective results from a limited set of systems and games; they are not general performance or image-quality claims.
@@ -103,6 +96,10 @@ RTX Video provides same-resolution denoising and true VSR upscaling. Its stronge
 | VSR Ultra | Best reconstruction and denoising in Galgames and streaming video | First choice for Galgames and streaming video |
 
 The trade-off is that RTX Video is NVIDIA-only and its VFX runtime and models greatly increase the distribution size. VSR worked on the developer's Windows 11 test machine, while one Windows 10 system failed to create VideoSuperRes; GPU, driver, OS, and runtime versions may all affect compatibility.
+
+#### NVIDIA Smooth Motion compatibility mode
+
+When Smooth Motion is enabled for Magpie through NVIDIA Profile Inspector, repeatedly starting and stopping scaling may cause driver-retained GPU memory to grow. Enable Smooth Motion compatibility mode under **Settings → General** to restart Magpie after each scaling session, allowing process exit to release those driver resources. The option is disabled by default and is intended only for Smooth Motion users.
 
 #### Intel XeSS 3.0.1
 

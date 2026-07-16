@@ -33,13 +33,6 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 
 这些接入无法获得游戏引擎提供的真实深度、运动向量、曝光、反应遮罩和投影 jitter，因此可能出现拖影、细节不稳定，效果也可能弱于游戏原生接入。它们属于研究原型，不能视为原生 DLSS 或 FSR 的替代品。
 
-### 本次新增
-
-- 加入 FSR 4.1.1 INT8，并在 Magpie 进程内绕过其 `IsSupported(device)` 检查，使其他厂商显卡也可以尝试运行。有限测试中的画质大致处于 DLSS CNN/J-K 模型的水平，仍属于不推荐的兼容性实验。
-- 为 FSR2、FSR3、FSR4 和 XeSS 增加伪 jitter 模式。当前只有 DLSS 的伪 jitter 结果可以使用；其他模型的伪 jitter 实测画面完全不可用，不作推荐。
-- 加入 MLAA，以及 SMAA T2x/4x 的捕获帧实验实现；SMAA T2x/4x 均提供 jitter 和无 jitter 版本。
-- 新增可选的 Smooth Motion 兼容模式：每次缩放结束后自动重启 Magpie，以释放 NVIDIA Smooth Motion 驱动驻留的显存。默认关闭。
-
 ### 初步测试观察
 
 以下结论来自有限设备和游戏中的主观对比，不代表普遍性能或画质结论。
@@ -103,6 +96,10 @@ RTX Video 提供同分辨率降噪和实际 VSR 放大。实测最适合 Galgame
 | VSR Ultra | Galgame 和流媒体视频中的重建与降噪效果最好 | Galgame、流媒体视频优先推荐 |
 
 代价是 RTX Video 仅支持 NVIDIA，而且 VFX 运行库和模型会显著增加分发包体积。VSR 已在开发者的 Windows 11 测试机上生效；一台 Windows 10 测试机无法创建 VideoSuperRes。GPU、驱动、系统和运行库版本都可能影响兼容性。
+
+#### NVIDIA Smooth Motion 兼容模式
+
+通过 NVIDIA Profile Inspector 为 Magpie 启用 Smooth Motion 后，反复开始和停止缩放可能导致驱动驻留的显存持续增加。可在“设置 → 常规”中开启 Smooth Motion 兼容模式；开启后，Magpie 会在每次缩放结束时自动重启，利用进程退出释放这些驱动资源。该选项默认关闭，仅建议 Smooth Motion 用户启用。
 
 #### Intel XeSS 3.0.1
 
