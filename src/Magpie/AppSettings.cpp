@@ -611,6 +611,8 @@ bool AppSettings::_Save(const _AppSettingsData& data) noexcept {
 	writer.Bool(data._isAlwaysRunAsAdmin);
 	writer.Key("showNotifyIcon");
 	writer.Bool(data._isShowNotifyIcon);
+	writer.Key("smoothMotionCompatibilityMode");
+	writer.Bool(data._isSmoothMotionCompatibilityMode);
 	writer.Key("inlineParams");
 	writer.Bool(data._isInlineParams);
 	writer.Key("autoCheckForUpdates");
@@ -807,6 +809,7 @@ void AppSettings::_LoadSettings(const rapidjson::GenericObject<true, rapidjson::
 		// v0.10 使用 showTrayIcon
 		JsonHelper::ReadBool(root, "showTrayIcon", _isShowNotifyIcon);
 	}
+	JsonHelper::ReadBool(root, "smoothMotionCompatibilityMode", _isSmoothMotionCompatibilityMode);
 	JsonHelper::ReadBool(root, "inlineParams", _isInlineParams);
 	JsonHelper::ReadBool(root, "autoCheckForUpdates", _isAutoCheckForUpdates);
 	JsonHelper::ReadBool(root, "checkForPreviewUpdates", _isCheckForPreviewUpdates);

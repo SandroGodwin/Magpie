@@ -1054,4 +1054,10 @@
   <data name="Home_Advanced_DeveloperOptions_DisableTopmost.Content" xml:space="preserve">
     <value>禁用缩放窗口置顶</value>
   </data>
+  <data name="Settings_General_SmoothMotionCompatibilityMode.Header" xml:space="preserve">
+    <value>Smooth Motion 兼容模式</value>
+  </data>
+  <data name="Settings_General_SmoothMotionCompatibilityMode.Description" xml:space="preserve">
+    <value>每次缩放结束后重启 Magpie，释放 NVIDIA Smooth Motion 驱动驻留的显存。仅在已为 Magpie 启用 Smooth Motion 时开启。</value>
+  </data>
 </root>

@@ -133,6 +133,20 @@ void SettingsViewModel::IsShowNotifyIcon(bool value) {
 	RaisePropertyChanged(L"IsShowNotifyIcon");
 }
 
+bool SettingsViewModel::IsSmoothMotionCompatibilityMode() const noexcept {
+	return AppSettings::Get().IsSmoothMotionCompatibilityMode();
+}
+
+void SettingsViewModel::IsSmoothMotionCompatibilityMode(bool value) {
+	AppSettings& settings = AppSettings::Get();
+	if (settings.IsSmoothMotionCompatibilityMode() == value) {
+		return;
+	}
+
+	settings.IsSmoothMotionCompatibilityMode(value);
+	RaisePropertyChanged(L"IsSmoothMotionCompatibilityMode");
+}
+
 bool SettingsViewModel::IsProcessElevated() const noexcept {
 	return Win32Helper::IsProcessElevated();
 }

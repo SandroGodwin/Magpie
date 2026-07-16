@@ -1054,4 +1054,10 @@
   <data name="Home_Advanced_DeveloperOptions_DisableTopmost.Content" xml:space="preserve">
     <value>Disable always-on-top</value>
   </data>
+  <data name="Settings_General_SmoothMotionCompatibilityMode.Header" xml:space="preserve">
+    <value>Smooth Motion compatibility mode</value>
+  </data>
+  <data name="Settings_General_SmoothMotionCompatibilityMode.Description" xml:space="preserve">
+    <value>Restart Magpie after each scaling session to release GPU memory retained by NVIDIA Smooth Motion. Enable only when Smooth Motion is configured for Magpie.</value>
+  </data>
 </root>

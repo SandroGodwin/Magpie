@@ -274,9 +274,14 @@ void ScalingService::_CheckForegroundTimer_Tick(winrt::DispatcherQueueTimer cons
 
 void ScalingService::_ScalingRuntime_StateChanged(ScalingState value) {
 	App::Get().Dispatcher().TryEnqueue([this, value]() {
+		bool shouldRestartForSmoothMotion = false;
+
 		if (value == ScalingState::Scaling) {
 			StopTimer();
 		} else if (value == ScalingState::Idle) {
+			shouldRestartForSmoothMotion = _hwndCurSrc &&
+				AppSettings::Get().IsSmoothMotionCompatibilityMode();
+
 			// 缩放结束后源窗口位于前台则不要检查自动缩放，用户可能刚通过快捷键或
 			// 工具栏终止缩放。_CheckForegroundTimer_Tick 也实现了类似功能，但它
 			// 的触发频率较低，容易错过时机。
@@ -289,6 +294,12 @@ void ScalingService::_ScalingRuntime_StateChanged(ScalingState value) {
 		}
 
 		IsScalingChanged.Invoke(value == ScalingState::Scaling);
+
+		if (shouldRestartForSmoothMotion) {
+			Logger::Get().Info("Smooth Motion 兼容模式：缩放结束后重启 Magpie");
+			AppSettings::Get().Save();
+			App::Get().Restart();
+		}
 	});
 }
 

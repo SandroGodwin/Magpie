@@ -10,6 +10,7 @@ namespace Magpie {
 		Boolean IsPortableMode;
 		void OpenConfigLocation();
 		Boolean IsShowNotifyIcon;
+		Boolean IsSmoothMotionCompatibilityMode;
 
 		Boolean IsProcessElevated { get; };
 		Boolean IsAlwaysRunAsAdmin;

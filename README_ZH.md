@@ -38,6 +38,7 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 - 加入 FSR 4.1.1 INT8，并在 Magpie 进程内绕过其 `IsSupported(device)` 检查，使其他厂商显卡也可以尝试运行。有限测试中的画质大致处于 DLSS CNN/J-K 模型的水平，仍属于不推荐的兼容性实验。
 - 为 FSR2、FSR3、FSR4 和 XeSS 增加伪 jitter 模式。当前只有 DLSS 的伪 jitter 结果可以使用；其他模型的伪 jitter 实测画面完全不可用，不作推荐。
 - 加入 MLAA，以及 SMAA T2x/4x 的捕获帧实验实现；SMAA T2x/4x 均提供 jitter 和无 jitter 版本。
+- 新增可选的 Smooth Motion 兼容模式：每次缩放结束后自动重启 Magpie，以释放 NVIDIA Smooth Motion 驱动驻留的显存。默认关闭。
 
 ### 初步测试观察
 

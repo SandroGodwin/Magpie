@@ -61,6 +61,14 @@
 					<ToggleSwitch x:Uid="ToggleSwitch"
 					              IsOn="{x:Bind ViewModel.IsShowNotifyIcon, Mode=TwoWay}" />
 				</local:SettingsCard>
+				<local:SettingsCard x:Uid="Settings_General_SmoothMotionCompatibilityMode"
+				                    IsWrapEnabled="True">
+					<local:SettingsCard.HeaderIcon>
+						<FontIcon Glyph="&#xE72C;" />
+					</local:SettingsCard.HeaderIcon>
+					<ToggleSwitch x:Uid="ToggleSwitch"
+					              IsOn="{x:Bind ViewModel.IsSmoothMotionCompatibilityMode, Mode=TwoWay}" />
+				</local:SettingsCard>
 			</local:SettingsGroup>
 			<local:SettingsGroup x:Uid="Settings_Launch">
 				<local:SettingsCard x:Uid="Settings_Launch_RunAtStartup">

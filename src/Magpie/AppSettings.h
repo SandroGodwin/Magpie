@@ -71,6 +71,7 @@ struct _AppSettingsData {
 	bool _isSimulateExclusiveFullscreen = false;
 	bool _isInlineParams = false;
 	bool _isShowNotifyIcon = true;
+	bool _isSmoothMotionCompatibilityMode = false;
 	bool _isMainWindowMaximized = false;
 	bool _isAutoCheckForUpdates = true;
 	bool _isCheckForPreviewUpdates = false;
@@ -253,6 +254,15 @@ public:
 	}
 
 	void IsShowNotifyIcon(bool value) noexcept;
+
+	bool IsSmoothMotionCompatibilityMode() const noexcept {
+		return _isSmoothMotionCompatibilityMode;
+	}
+
+	void IsSmoothMotionCompatibilityMode(bool value) noexcept {
+		_isSmoothMotionCompatibilityMode = value;
+		SaveAsync();
+	}
 
 	bool IsInlineParams() const noexcept {
 		return _isInlineParams;

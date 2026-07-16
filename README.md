@@ -38,6 +38,7 @@ These integrations do not have access to the real depth, motion vectors, exposur
 - Added FSR 4.1.1 INT8 with a process-local bypass of its `IsSupported(device)` check so that non-AMD GPUs can attempt to run it. In limited testing, its image quality was roughly comparable to the DLSS CNN/J-K models and it remains an unrecommended compatibility experiment.
 - Added synthetic-jitter modes for FSR2, FSR3, FSR4, and XeSS. Only the DLSS synthetic-jitter path produced usable results; the synthetic-jitter modes of the other models were visually unusable and are not recommended.
 - Added MLAA and experimental captured-frame SMAA T2x/4x Effects; both SMAA modes have jittered and non-jittered variants.
+- Added an optional Smooth Motion compatibility mode that restarts Magpie after each scaling session to release GPU memory retained by NVIDIA Smooth Motion. It is disabled by default.
 
 ### Initial test observations
 

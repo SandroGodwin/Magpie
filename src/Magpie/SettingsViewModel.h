@@ -27,6 +27,9 @@ struct SettingsViewModel : SettingsViewModelT<SettingsViewModel>,
 	bool IsShowNotifyIcon() const noexcept;
 	void IsShowNotifyIcon(bool value);
 
+	bool IsSmoothMotionCompatibilityMode() const noexcept;
+	void IsSmoothMotionCompatibilityMode(bool value);
+
 	bool IsProcessElevated() const noexcept;
 
 	bool IsAlwaysRunAsAdmin() const noexcept;
