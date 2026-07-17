@@ -15,7 +15,7 @@ using namespace winrt::Magpie::implementation;
 
 namespace Magpie {
 
-bool MainWindow::Create() noexcept {
+bool MainWindow::Create(bool startMinimized) noexcept {
 	[[maybe_unused]] static Ignore _ = [] {
 		const HINSTANCE hInstance = wil::GetModuleInstanceHandle();
 
@@ -61,7 +61,7 @@ bool MainWindow::Create() noexcept {
 		(sizeToSet.cx == 0 ? (SWP_NOMOVE | SWP_NOSIZE) : 0) | SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 
 	// Xaml 控件加载完成后显示主窗口
-	Content()->Loaded([this](winrt::IInspectable const&, RoutedEventArgs const&) {
+	Content()->Loaded([this, startMinimized](winrt::IInspectable const&, RoutedEventArgs const&) {
 		if (AppSettings::Get().IsMainWindowMaximized()) {
 			// ShowWindow(Handle(), SW_SHOWMAXIMIZED) 会显示错误的动画。因此我们以窗口化显示，
 			// 但位置和大小都和最大化相同，显示完毕后将状态设为最大化。
@@ -98,7 +98,11 @@ bool MainWindow::Create() noexcept {
 			ShowWindow(Handle(), SW_SHOWNORMAL);
 		}
 
-		SetForegroundWindow(Handle());
+		if (startMinimized) {
+			ShowWindow(Handle(), SW_MINIMIZE);
+		} else {
+			SetForegroundWindow(Handle());
+		}
 	});
 
 	const HINSTANCE hInstance = wil::GetModuleInstanceHandle();

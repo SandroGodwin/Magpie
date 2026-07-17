@@ -298,7 +298,7 @@ void ScalingService::_ScalingRuntime_StateChanged(ScalingState value) {
 		if (shouldRestartForSmoothMotion) {
 			Logger::Get().Info("Smooth Motion 兼容模式：缩放结束后重启 Magpie");
 			AppSettings::Get().Save();
-			App::Get().Restart();
+			App::Get().RestartForSmoothMotion();
 		}
 	});
 }

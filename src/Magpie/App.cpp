@@ -50,6 +50,9 @@ namespace winrt::Magpie::implementation {
 static UINT WM_MAGPIE_SHOWME;
 static UINT WM_MAGPIE_QUIT;
 
+static constexpr wchar_t START_IN_TRAY_ARGUMENT[] = L"-t";
+static constexpr wchar_t START_MINIMIZED_ARGUMENT[] = L"--smooth-motion-restart-minimized";
+
 static void InitMessages() noexcept {
 	WM_MAGPIE_SHOWME = RegisterWindowMessage(CommonSharedConstants::WM_MAGPIE_SHOWME);
 	WM_MAGPIE_QUIT = RegisterWindowMessage(CommonSharedConstants::WM_MAGPIE_QUIT);
@@ -184,9 +187,12 @@ bool App::Initialize(const wchar_t* arguments) {
 	_isShowNotifyIconChangedRevoker = AppSettings::Get().IsShowNotifyIconChanged(
 		auto_revoke, [](bool value) { NotifyIconService::Get().IsShow(value); });
 
+	const std::wstring_view argumentsView = arguments ? arguments : L"";
+	const bool startMinimized = argumentsView == START_MINIMIZED_ARGUMENT;
+
 	// 不显示托盘图标时忽略 -t 参数
-	if (!notifyIconService.IsShow() || arguments != L"-t"sv) {
-		if (!_mainWindow->Create()) {
+	if (!notifyIconService.IsShow() || argumentsView != START_IN_TRAY_ARGUMENT) {
+		if (!_mainWindow->Create(startMinimized)) {
 			_Uninitialize();
 			return false;
 		}
@@ -259,6 +265,19 @@ void App::Restart(bool asElevated, const wchar_t* arguments) noexcept {
 		Logger::Get().Win32Error("ShellExecuteEx 失败");
 		Logger::Get().Flush();
 	}
+}
+
+void App::RestartForSmoothMotion() noexcept {
+	const HWND hwndMain = _mainWindow->Handle();
+	const wchar_t* arguments = nullptr;
+
+	if (!hwndMain) {
+		arguments = START_IN_TRAY_ARGUMENT;
+	} else if (IsIconic(hwndMain)) {
+		arguments = START_MINIMIZED_ARGUMENT;
+	}
+
+	Restart(false, arguments);
 }
 
 const com_ptr<RootPage>& App::RootPage() const noexcept {

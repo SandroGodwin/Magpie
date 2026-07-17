@@ -537,7 +537,11 @@ void AppSettings::_UpdateWindowPlacement() noexcept {
 		(wp.rcNormalPosition.bottom - wp.rcNormalPosition.top) / dpiFactor,
 	};
 
-	_isMainWindowMaximized = wp.showCmd == SW_MAXIMIZE;
+	// 最小化时保留最小化前的最大化状态，这样自动重启后恢复窗口时不会
+	// 把“从最大化窗口最小化”误记为普通窗口。
+	if (!IsIconic(hwndMain)) {
+		_isMainWindowMaximized = wp.showCmd == SW_MAXIMIZE;
+	}
 }
 
 bool AppSettings::_Save(const _AppSettingsData& data) noexcept {
