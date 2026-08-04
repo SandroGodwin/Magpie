@@ -17,6 +17,8 @@
       <PreprocessorDefinitions Condition="$(UseCompSwapchain)">MP_USE_COMPSWAPCHAIN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="$(EnableDLSSZeroMV) And '$(Platform)' == 'x64'">MP_ENABLE_DLSS_ZEROMV;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories Condition="$(EnableDLSSZeroMV) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">MP_ENABLE_DLSS_FRAME_GENERATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(EnableFSR2ZeroMV) And '$(Platform)' == 'x64'">MP_ENABLE_FSR2_ZEROMV;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories Condition="$(EnableFSR2ZeroMV) And '$(Platform)' == 'x64'">$(FSR2SdkDir)\src\ffx-fsr2-api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(EnableFSR3ZeroMV) And '$(Platform)' == 'x64'">MP_ENABLE_FSR3_ZEROMV;%(PreprocessorDefinitions)</PreprocessorDefinitions>

@@ -95,7 +95,8 @@
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
       <SubSystem>Windows</SubSystem>
       <AdditionalDependencies>Gdi32.lib;Dwmapi.lib;Shell32.lib;Ole32.lib;Imagehlp.lib;Comctl32.lib;Shlwapi.lib;Magnification.lib;bcp47mrm.lib;Shcore.lib;Uxtheme.lib;Taskschd.lib;Dcomp.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalDependencies Condition="$(EnableDLSSZeroMV) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\lib\Windows_x86_64\x64\nvsdk_ngx_s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="($(EnableDLSSZeroMV) Or $(EnableDLSSFrameGeneration)) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\lib\Windows_x86_64\x64\nvsdk_ngx_s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">D3D12.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="$(EnableXeSSZeroMV) And '$(Platform)' == 'x64'">$(XeSSSdkDir)\lib\libxess.lib;D3D12.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <DelayLoadDLLs>d3dcompiler_47.dll;Magnification.dll;Imagehlp.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
@@ -728,6 +729,10 @@
   </ItemGroup>
   <Target Name="CopyDLSSZeroMVRuntime" AfterTargets="Build" Condition="$(EnableDLSSZeroMV) And '$(Platform)' == 'x64'">
     <Copy SourceFiles="$(DLSSSdkDir)\lib\Windows_x86_64\rel\nvngx_dlss.dll" DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="$(DLSSSdkDir)\LICENSE.txt" DestinationFiles="$(OutDir)\NVIDIA-DLSS-LICENSE.txt" />
+  </Target>
+  <Target Name="CopyDLSSFrameGenerationRuntime" AfterTargets="Build" Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">
+    <Copy SourceFiles="$(DLSSSdkDir)\lib\Windows_x86_64\rel\nvngx_dlssg.dll" DestinationFolder="$(OutDir)" />
     <Copy SourceFiles="$(DLSSSdkDir)\LICENSE.txt" DestinationFiles="$(OutDir)\NVIDIA-DLSS-LICENSE.txt" />
   </Target>
   <Target Name="CopyFSR2ZeroMVRuntime" AfterTargets="Build" Condition="$(EnableFSR2ZeroMV) And '$(Platform)' == 'x64'">

@@ -488,8 +488,9 @@ LRESULT ScalingWindow::_MessageHandler(UINT msg, WPARAM wParam, LPARAM lParam) n
 			return 0;
 		}
 		
-		// 删除消息队列中的其他 WM_FRONTEND_RENDER 以避免重复渲染
-		{
+		// Regular capture notifications may be coalesced. DLSSFG sends wParam=1
+		// synchronously for every generated frame, and those must remain ordered.
+		if (wParam == 0) {
 			MSG msg1;
 			while (PeekMessage(&msg1, Handle(), CommonSharedConstants::WM_FRONTEND_RENDER,
 				CommonSharedConstants::WM_FRONTEND_RENDER, PM_REMOVE)

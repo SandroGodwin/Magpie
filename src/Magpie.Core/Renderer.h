@@ -90,6 +90,10 @@ private:
 
 	void _BackendRender(ID3D11Texture2D* effectsOutput) noexcept;
 
+	bool _PublishBackendTexture(ID3D11Texture2D* texture, bool synchronous) noexcept;
+
+	bool _InitializeDLSSFrameGenerator(ID3D11Texture2D* input, uint32_t multiplier) noexcept;
+
 	bool _UpdateDynamicConstants() const noexcept;
 
 	winrt::IAsyncAction _UpdateNextScreenshotNum(const wchar_t* imgFormat) noexcept;
@@ -128,6 +132,8 @@ private:
 	std::vector<std::unique_ptr<class FSR3ZeroMVUpscaler>> _fsr3ZeroMVUpscalers;
 	std::vector<std::unique_ptr<class XeSSZeroMVUpscaler>> _xessZeroMVUpscalers;
 	std::vector<std::unique_ptr<class RTXVideoDenoiser>> _rtxVideoDenoisers;
+	std::unique_ptr<class DLSSFrameGenerator> _dlssFrameGenerator;
+	winrt::com_ptr<ID3D11Texture2D> _dlssFrameGenerationOutput;
 
 	StepTimer _stepTimer;
 	EffectsProfiler _effectsProfiler;
@@ -145,6 +151,12 @@ private:
 
 	// 可由所有线程访问
 	std::atomic<uint64_t> _sharedTextureMutexKey = 0;
+	std::atomic<bool> _synchronousFramePresentationEnabled = false;
+	float _frameRateFilterTarget = 0.0f;
+	std::chrono::nanoseconds _synchronousPresentInterval{};
+	std::chrono::steady_clock::time_point _dlssFgDiagnosticsStart{};
+	uint32_t _dlssFgCapturedFrameCount = 0;
+	uint32_t _dlssFgPresentedFrameCount = 0;
 
 	// INVALID_HANDLE_VALUE 表示后端初始化失败
 	std::atomic<HANDLE> _sharedTextureHandle{ NULL };

@@ -246,6 +246,11 @@ void App::Quit() {
 }
 
 void App::Restart(bool asElevated, const wchar_t* arguments) noexcept {
+	// Release global hotkeys and the low-level keyboard hook before launching
+	// the replacement process. Waiting until normal shutdown leaves a short
+	// overlap where the new instance receives ERROR_HOTKEY_ALREADY_REGISTERED.
+	ShortcutService::Get().Uninitialize();
+
 	Quit();
 
 	// 提前释放锁

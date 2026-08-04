@@ -67,8 +67,20 @@ bool AdaptivePresenter::_Initialize(HWND hwndAttach) noexcept {
 		return false;
 	}
 
-	// 为了降低延迟，两个垂直同步之间允许渲染 bufferCount - 1 帧
-	_dxgiSwapChain->SetMaximumFrameLatency(bufferCount - 1);
+	uint32_t maximumFrameLatency = bufferCount - 1;
+	for (const EffectOption& effect : ScalingWindow::Get().Options().effects) {
+		if (effect.name == "DLSSFG\\DLSS_FrameGeneration") {
+			maximumFrameLatency = 1;
+			break;
+		}
+	}
+	// DLSSFG submits multiple output frames for each captured frame. Restrict
+	// its swap-chain queue to one frame so presentation cannot add another
+	// multi-frame latency queue; other effects retain the original behavior.
+	_dxgiSwapChain->SetMaximumFrameLatency(maximumFrameLatency);
+	if (maximumFrameLatency == 1) {
+		Logger::Get().Info("DLSSFG swap-chain maximum frame latency: 1");
+	}
 
 	_frameLatencyWaitableObject.reset(_dxgiSwapChain->GetFrameLatencyWaitableObject());
 	if (!_frameLatencyWaitableObject) {

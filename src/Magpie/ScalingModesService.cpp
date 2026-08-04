@@ -182,6 +182,11 @@ static bool LoadScalingMode(
 				return false;
 			}
 		}
+		// Frame Rate Filter used to live in the Utility folder. Keep existing
+		// user scaling modes working after moving it to the root effect list.
+		if (effect.name == L"Utility\\FrameRate_Filter") {
+			effect.name = L"FrameRate_Filter";
+		}
 
 		if (!JsonHelper::ReadUInt(elemObj, "scalingType", (uint32_t&)effect.scalingType) && !loadingSettings) {
 			return false;

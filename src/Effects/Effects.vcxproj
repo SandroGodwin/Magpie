@@ -23,6 +23,14 @@
     </CopyFileToFolders>
   </ItemDefinitionGroup>
   <ItemGroup>
+	<CopyFileToFolders Include="DLSSFG\DLSS_FrameGeneration.hlsl">
+	  <FileType>Document</FileType>
+	  <DeploymentContent>true</DeploymentContent>
+	</CopyFileToFolders>
+	<CopyFileToFolders Include="FrameRate_Filter.hlsl">
+	  <FileType>Document</FileType>
+	  <DeploymentContent>true</DeploymentContent>
+	</CopyFileToFolders>
 	<CopyFileToFolders Include="MLAA\MLAA.hlsl">
 	  <FileType>Document</FileType>
 	</CopyFileToFolders>

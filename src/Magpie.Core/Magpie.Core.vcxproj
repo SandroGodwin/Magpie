@@ -86,6 +86,7 @@
     <ClInclude Include="TextureHelper.h" />
     <ClInclude Include="YasHelper.h" />
     <ClInclude Include="DLSSZeroMVUpscaler.h" />
+    <ClInclude Include="DLSSFrameGenerator.h" />
     <ClInclude Include="FSR2ZeroMVUpscaler.h" />
     <ClInclude Include="FSR3ZeroMVUpscaler.h" />
     <ClInclude Include="XeSSZeroMVUpscaler.h" />
@@ -131,6 +132,7 @@
     <ClCompile Include="Win32Helper.cpp" />
     <ClCompile Include="WindowHelper.cpp" />
     <ClCompile Include="DLSSZeroMVUpscaler.cpp" />
+    <ClCompile Include="DLSSFrameGenerator.cpp" />
     <ClCompile Include="FSR2ZeroMVUpscaler.cpp" />
     <ClCompile Include="FSR3ZeroMVUpscaler.cpp" />
     <ClCompile Include="XeSSZeroMVUpscaler.cpp" />

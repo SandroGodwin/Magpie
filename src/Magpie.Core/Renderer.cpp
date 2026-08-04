@@ -19,6 +19,7 @@
 #include "TextureHelper.h"
 #include "Win32Helper.h"
 #include "DLSSZeroMVUpscaler.h"
+#include "DLSSFrameGenerator.h"
 #include "FSR2ZeroMVUpscaler.h"
 #include "FSR3ZeroMVUpscaler.h"
 #include "XeSSZeroMVUpscaler.h"
@@ -39,6 +40,11 @@ static EffectDesc bicubicDesc;
 Renderer::Renderer() noexcept {}
 
 Renderer::~Renderer() noexcept {
+	// The backend can be waiting for a synchronous DLSSFG presentation while
+	// the frontend thread is destroying this Renderer. Stop issuing new
+	// synchronous sends before waiting for the backend thread to exit.
+	_synchronousFramePresentationEnabled.store(false, std::memory_order_release);
+
 	_hKeyboardHook.reset();
 
 	if (_backendThread.joinable()) {
@@ -137,6 +143,8 @@ ScalingError Renderer::Initialize(HWND hwndAttach, OverlayOptions& overlayOption
 		Logger::Get().Error("初始化 OverlayDrawer 失败");
 		return ScalingError::ScalingFailedGeneral;
 	}
+
+	_synchronousFramePresentationEnabled.store(true, std::memory_order_release);
 
 	const ScalingOptions& options = ScalingWindow::Get().Options();
 	if (!options.Is3DGameMode()) {
@@ -292,6 +300,8 @@ bool Renderer::Render(bool force, bool waitForGpu) noexcept {
 }
 
 bool Renderer::OnResize() noexcept {
+	_synchronousFramePresentationEnabled.store(false, std::memory_order_release);
+
 	if (!_presenter->OnResize()) {
 		Logger::Get().Error("更改呈现器尺寸失败");
 		return false;
@@ -344,6 +354,7 @@ bool Renderer::OnResize() noexcept {
 	_frontendSharedTextureMutex = _frontendSharedTexture.try_as<IDXGIKeyedMutex>();
 	// 必须重置 _lastAccessMutexKey，确保不会和 _sharedTextureMutexKey 刚巧相同导致接下来的渲染被跳过
 	_lastAccessMutexKey = 0;
+	_synchronousFramePresentationEnabled.store(true, std::memory_order_release);
 
 	_UpdateDestRect();
 	return true;
@@ -520,6 +531,9 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 	_xessZeroMVUpscalers.resize(effectCount);
 	_rtxVideoDenoisers.clear();
 	_rtxVideoDenoisers.resize(effectCount);
+	_dlssFrameGenerator.reset();
+	_dlssFrameGenerationOutput = nullptr;
+	uint32_t dlssFrameGenerationMultiplier = 0;
 
 	ID3D11Texture2D* inOutTexture = _frameSource->GetOutput();
 	for (uint32_t i = 0; i < effectCount; ++i) {
@@ -624,6 +638,17 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 			_rtxVideoDenoisers[i] = std::move(denoiser);
 		}
 
+		if (effects[i].name == "DLSSFG\\DLSS_FrameGeneration") {
+			if (dlssFrameGenerationMultiplier) {
+				Logger::Get().Error("Only one DLSS Frame Generation effect is allowed");
+				return nullptr;
+			}
+			auto it = effects[i].parameters.find("multiplier");
+			const float value = it == effects[i].parameters.end() ? 2.0f : it->second;
+			dlssFrameGenerationMultiplier = std::clamp(
+				(uint32_t)std::lround(value), 2u, 4u);
+		}
+
 		// 释放 CSO 内存，不再需要它们
 		for (EffectPassDesc& passDesc : _effectDescs[i].passes) {
 			passDesc.cso = nullptr;
@@ -635,6 +660,11 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 			Logger::Get().Error("_AppendBicubic 失败");
 			return nullptr;
 		}
+	}
+
+	if (dlssFrameGenerationMultiplier &&
+		!_InitializeDLSSFrameGenerator(inOutTexture, dlssFrameGenerationMultiplier)) {
+		return nullptr;
 	}
 
 	_UpdateActiveEffectDescs();
@@ -828,7 +858,49 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 		}
 	}
 
+	if (_dlssFrameGenerator) {
+		const uint32_t multiplier = _dlssFrameGenerator->Multiplier();
+		if (!_InitializeDLSSFrameGenerator(inOutTexture, multiplier)) {
+			return nullptr;
+		}
+	}
+
 	return inOutTexture;
+}
+
+bool Renderer::_InitializeDLSSFrameGenerator(
+	ID3D11Texture2D* input,
+	uint32_t multiplier
+) noexcept {
+	D3D11_TEXTURE2D_DESC desc{};
+	input->GetDesc(&desc);
+	_dlssFrameGenerationOutput = DirectXHelper::CreateTexture2D(
+		_backendResources.GetD3DDevice(),
+		desc.Format,
+		desc.Width,
+		desc.Height,
+		D3D11_BIND_SHADER_RESOURCE
+	);
+	if (!_dlssFrameGenerationOutput) {
+		Logger::Get().Error("Create DLSSFG output texture failed");
+		return false;
+	}
+
+	auto frameGenerator = std::make_unique<DLSSFrameGenerator>();
+	if (!frameGenerator->Initialize(
+		_backendResources, input, _dlssFrameGenerationOutput.get(), multiplier)) {
+		return false;
+	}
+	if (_frameRateFilterTarget > 0.0f) {
+		const double outputFrameRate =
+			double(_frameRateFilterTarget) * frameGenerator->Multiplier();
+		_synchronousPresentInterval = std::chrono::nanoseconds(
+			(int64_t)std::llround(1'000'000'000.0 / outputFrameRate));
+	} else {
+		_synchronousPresentInterval = {};
+	}
+	_dlssFrameGenerator = std::move(frameGenerator);
+	return true;
 }
 
 void Renderer::_UpdateDestRect() noexcept {
@@ -972,9 +1044,13 @@ void Renderer::_BackendThreadProc() noexcept {
 			[[fallthrough]];
 		case FrameSourceState::NewFrame:
 			_BackendRender(_effectDrawers.back().GetOutputTexture());
-			// 通知前端执行渲染
-			PostMessage(ScalingWindow::Get().Handle(),
-				CommonSharedConstants::WM_FRONTEND_RENDER, 0, 0);
+			// DLSSFG uses synchronous, individually paced presentation so generated
+			// frames cannot be coalesced into the following real frame.
+			if (!_dlssFrameGenerator ||
+				!_synchronousFramePresentationEnabled.load(std::memory_order_acquire)) {
+				PostMessage(ScalingWindow::Get().Handle(),
+					CommonSharedConstants::WM_FRONTEND_RENDER, 0, 0);
+			}
 			break;
 		case FrameSourceState::Error:
 			// 捕获出错，退出缩放
@@ -1044,6 +1120,25 @@ HANDLE Renderer::_InitBackend() noexcept {
 		}
 
 		const ScalingOptions& options = ScalingWindow::Get().Options();
+		for (const EffectOption& effect : options.effects) {
+			if (effect.name != "FrameRate_Filter") {
+				continue;
+			}
+			auto it = effect.parameters.find("targetFrameRate");
+			const float targetFrameRate = std::clamp(
+				it == effect.parameters.end() ? 60.0f : it->second,
+				1.0f,
+				240.0f
+			);
+			if (!maxFrameRate || targetFrameRate < *maxFrameRate) {
+				maxFrameRate = targetFrameRate;
+			}
+			_frameRateFilterTarget = _frameRateFilterTarget == 0.0f
+				? targetFrameRate
+				: std::min(_frameRateFilterTarget, targetFrameRate);
+			Logger::Get().Info(fmt::format(
+				"Frame Rate Filter enabled: {} FPS", targetFrameRate));
+		}
 		if (options.maxFrameRate) {
 			if (!maxFrameRate || *options.maxFrameRate < *maxFrameRate) {
 				maxFrameRate = options.maxFrameRate;
@@ -1095,6 +1190,9 @@ HANDLE Renderer::_InitBackend() noexcept {
 
 void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 	_stepTimer.PrepareForRender();
+	if (_dlssFrameGenerator) {
+		++_dlssFgCapturedFrameCount;
+	}
 
 	ID3D11DeviceContext4* d3dDC = _backendResources.GetD3DDC();
 	d3dDC->ClearState();
@@ -1139,41 +1237,106 @@ void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 
 	_effectsProfiler.OnEndEffects(d3dDC);
 
+	if (_dlssFrameGenerator) {
+		const bool generated = _dlssFrameGenerator->Draw(
+			effectsOutput,
+			_dlssFrameGenerationOutput.get(),
+			[this](ID3D11Texture2D* generatedFrame) {
+				return _PublishBackendTexture(generatedFrame, true);
+			}
+		);
+		if (!generated) {
+			Logger::Get().Error("DLSS Frame Generation failed; presenting the captured frame");
+		}
+	}
+
+	const bool synchronous = _dlssFrameGenerator &&
+		_synchronousFramePresentationEnabled.load(std::memory_order_acquire);
+	if (!_PublishBackendTexture(effectsOutput, synchronous)) {
+		return;
+	}
+
+	// 查询效果的渲染时间
+	_effectsProfiler.QueryTimings(d3dDC);
+}
+
+bool Renderer::_PublishBackendTexture(
+	ID3D11Texture2D* texture,
+	bool synchronous
+) noexcept {
+	ID3D11DeviceContext4* d3dDC = _backendResources.GetD3DDC();
+
 	HRESULT hr = d3dDC->Signal(_d3dFence.get(), ++_fenceValue);
 	if (FAILED(hr)) {
 		Logger::Get().ComError("Signal 失败", hr);
-		return;
+		return false;
 	}
 
 	hr = _d3dFence->SetEventOnCompletion(_fenceValue, _fenceEvent.get());
 	if (FAILED(hr)) {
 		Logger::Get().ComError("SetEventOnCompletion 失败", hr);
-		return;
+		return false;
 	}
 
 	d3dDC->Flush();
-
-	// 等待渲染完成
 	_fenceEvent.wait();
-
-	// 查询效果的渲染时间
-	_effectsProfiler.QueryTimings(d3dDC);
 
 	// 渲染完成后再更新 _sharedTextureMutexKey，否则前端必须等待，降低光标流畅度
 	const uint64_t key = ++_sharedTextureMutexKey;
 	hr = _backendSharedTextureMutex->AcquireSync(key - 1, INFINITE);
 	if (FAILED(hr)) {
 		Logger::Get().ComError("AcquireSync 失败", hr);
-		return;
+		return false;
 	}
 
-	d3dDC->CopyResource(_backendSharedTexture.get(), effectsOutput);
+	d3dDC->CopyResource(_backendSharedTexture.get(), texture);
 
 	_backendSharedTextureMutex->ReleaseSync(key);
 
 	// 根据 https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-opensharedresource，
 	// 更新共享纹理后必须调用 Flush
 	d3dDC->Flush();
+
+	if (synchronous &&
+		_synchronousFramePresentationEnabled.load(std::memory_order_acquire)) {
+		const auto presentStart = std::chrono::steady_clock::now();
+		DWORD_PTR renderResult = 0;
+		if (!SendMessageTimeout(
+			ScalingWindow::Get().Handle(),
+			CommonSharedConstants::WM_FRONTEND_RENDER,
+			1,
+			0,
+			SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT,
+			250,
+			&renderResult
+		)) {
+			return false;
+		}
+		do {
+			Win32Helper::WaitForDwmComposition();
+		} while (_synchronousPresentInterval.count() > 0 &&
+			std::chrono::steady_clock::now() - presentStart < _synchronousPresentInterval);
+
+		++_dlssFgPresentedFrameCount;
+		const auto now = std::chrono::steady_clock::now();
+		if (_dlssFgDiagnosticsStart.time_since_epoch().count() == 0) {
+			_dlssFgDiagnosticsStart = now;
+		} else {
+			const double elapsed = std::chrono::duration<double>(
+				now - _dlssFgDiagnosticsStart).count();
+			if (elapsed >= 1.0) {
+				Logger::Get().Info(fmt::format(
+					"DLSSFG presentation: captured={:.1f} FPS, submitted={:.1f} FPS",
+					_dlssFgCapturedFrameCount / elapsed,
+					_dlssFgPresentedFrameCount / elapsed));
+				_dlssFgDiagnosticsStart = now;
+				_dlssFgCapturedFrameCount = 0;
+				_dlssFgPresentedFrameCount = 0;
+			}
+		}
+	}
+
+	return true;
 }
 
 bool Renderer::_UpdateDynamicConstants() const noexcept {
