@@ -42,12 +42,12 @@
 
 #### 帧生成
 
-在目前有限的主观对比中，XeSSFG 的插帧效果似乎优于 DLSSFG。通用显卡可先尝试 XeSSFG x2；Intel Arc 可进一步测试 x2-x4 Multi-Frame Generation。不要与 NVIDIA Smooth Motion 或另一个帧生成 Effect 同时使用。
+在目前有限的主观对比中，XeSSFG 的插帧效果似乎优于 DLSSFG。通用显卡可先尝试 XeSSFG x2；Intel Arc 可进一步测试 x2-x4 Multi-Frame Generation。不建议（但如果你非要试试的话也不是不行）与 NVIDIA Smooth Motion 或另一个帧生成 Effect 同时使用。
 
 ### 注意
 
 - XeSSFG 和 DLSSFG 都是缺少真实运动向量、深度及 UI 分离信息的实验接入，画质、延迟和稳定性不能等同于游戏原生实现。
-- 不要将任何帧生成 Effect 与 NVIDIA Smooth Motion 同时使用，也不要叠加多个帧生成 Effect。
+- 不建议将任何帧生成 Effect 与 NVIDIA Smooth Motion 同时使用，也不建议叠加多个帧生成 Effect；如果仍要尝试，请自行留意兼容性与稳定性。
 - XeSS x3/x4 多帧生成主要面向 Intel Arc；其他显卡会被限制或回退到 x2。
 
 ## English
@@ -92,10 +92,10 @@ The author has not performed extensive comparisons on AMD GPUs. Try `FSR2 Zero-M
 
 #### Frame Generation
 
-In the limited subjective comparison so far, XeSSFG appeared to produce better interpolation results than DLSSFG. Start with XeSSFG x2 on generally supported GPUs; Intel Arc users can additionally test x2-x4 Multi-Frame Generation. Do not combine it with NVIDIA Smooth Motion or another Frame Generation Effect.
+In the limited subjective comparison so far, XeSSFG appeared to produce better interpolation results than DLSSFG. Start with XeSSFG x2 on generally supported GPUs; Intel Arc users can additionally test x2-x4 Multi-Frame Generation. Combining it with NVIDIA Smooth Motion or another Frame Generation Effect is not recommended, though you can still try it if you really want to.
 
 ### Notes
 
 - XeSSFG and DLSSFG are experimental colour-frame-only integrations without real motion vectors, depth, or UI separation. Image quality, latency, and stability cannot match native game integrations.
-- Do not combine any Frame Generation Effect with NVIDIA Smooth Motion, and do not stack multiple Frame Generation Effects.
+- Combining any Frame Generation Effect with NVIDIA Smooth Motion, or stacking multiple Frame Generation Effects, is not recommended. If you still want to try it, keep an eye on compatibility and stability.
 - XeSS x3/x4 multi-frame generation primarily targets Intel Arc; other GPUs are limited or fall back to x2.
