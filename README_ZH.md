@@ -73,6 +73,8 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 
 帧生成位于最终呈现阶段，使用虚拟零运动向量、平坦深度、零 jitter 和捕获颜色帧，而不是游戏引擎提供的时域数据。不要将帧生成 Effect 与 NVIDIA Smooth Motion 或另一个帧生成 Effect 同时使用。
 
+启用帧生成时，Magpie 会强制过滤完全相同的捕获帧，并停止通过最低帧率计时器合成重复基础帧。XeSSFG 还会忽略仅由 Magpie 软件光标或叠加层变化触发的前端 Present，避免鼠标移动导致 SDK 输入帧率虚高；光标会随下一张真实捕获帧更新。
+
 | Effect | 硬件与倍率 | 当前状态 |
 | --- | --- | --- |
 | DLSS Frame Generation | NVIDIA RTX；可配置 x2/x3/x4 | 实验功能。失败保护会继续显示真实捕获帧：第一次失败重置历史，随后只重建一次；若仍连续失败，只在当前缩放会话中禁用 DLSSFG。CPU/GPU Fence 同步继续保留。 |

@@ -156,6 +156,8 @@ private:
 	std::chrono::steady_clock::time_point _dlssFgDiagnosticsStart{};
 	uint32_t _dlssFgCapturedFrameCount = 0;
 	uint32_t _dlssFgPresentedFrameCount = 0;
+	bool _isXeSSFrameGenerationActive = false;
+	bool _xessFgFrontendSuppressionLogged = false;
 
 	// INVALID_HANDLE_VALUE 表示后端初始化失败
 	std::atomic<HANDLE> _sharedTextureHandle{ NULL };

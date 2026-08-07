@@ -61,8 +61,9 @@ FrameSourceState FrameSourceBase::Update() noexcept {
 
 	const ScalingOptions& options = ScalingWindow::Get().Options();
 	const auto duplicateFrameDetectionMode = options.duplicateFrameDetectionMode;
-	if (state != FrameSourceState::NewFrame || options.Is3DGameMode() ||
-		duplicateFrameDetectionMode == DuplicateFrameDetectionMode::Never) {
+	if (state != FrameSourceState::NewFrame || (!_forceDuplicateFrameDetection &&
+		(options.Is3DGameMode() ||
+			duplicateFrameDetectionMode == DuplicateFrameDetectionMode::Never))) {
 		return state;
 	}
 
@@ -80,7 +81,8 @@ FrameSourceState FrameSourceBase::Update() noexcept {
 		return FrameSourceState::NewFrame;
 	}
 
-	if (duplicateFrameDetectionMode == DuplicateFrameDetectionMode::Always) {
+	if (_forceDuplicateFrameDetection ||
+		duplicateFrameDetectionMode == DuplicateFrameDetectionMode::Always) {
 		// 总是检查重复帧
 		if (_IsDuplicateFrame()) {
 			return FrameSourceState::Waiting;

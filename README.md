@@ -73,6 +73,8 @@ Creating a dedicated Magpie application profile in NVIDIA Profile Inspector is r
 
 Frame Generation runs at the final presentation stage and uses virtual zero motion vectors, flat depth, zero jitter, and captured colour frames rather than engine-provided temporal data. Do not combine a Frame Generation Effect with NVIDIA Smooth Motion or another Frame Generation Effect.
 
+While Frame Generation is active, Magpie forces exact duplicate-frame filtering and stops synthesizing repeated base frames through its minimum-FPS timer. XeSSFG also ignores frontend Presents caused only by Magpie's software cursor or overlay, preventing mouse movement from inflating the SDK input rate; the cursor updates with the next genuine captured frame.
+
 | Effect | Hardware and multiplier | Current status |
 | --- | --- | --- |
 | DLSS Frame Generation | NVIDIA RTX; configurable x2/x3/x4 | Experimental. Failure protection keeps real captured frames visible, first resets history, then recreates the feature once, and finally disables DLSSFG only for the current scaling session after repeated failures. CPU/GPU fence synchronization remains enabled. |

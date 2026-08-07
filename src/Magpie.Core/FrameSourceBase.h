@@ -33,6 +33,10 @@ public:
 
 	FrameSourceState Update() noexcept;
 
+	void ForceDuplicateFrameDetection(bool value) noexcept {
+		_forceDuplicateFrameDetection = value;
+	}
+
 	ID3D11Texture2D* GetOutput() noexcept {
 		return _output.get();
 	}
@@ -87,6 +91,7 @@ private:
 	uint16_t _framesLeft;
 	
 	bool _isCheckingForDuplicateFrame = true;
+	bool _forceDuplicateFrameDetection = false;
 
 protected:
 	bool _roundCornerDisabled = false;

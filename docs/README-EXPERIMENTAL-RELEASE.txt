@@ -1,7 +1,7 @@
 Magpie experimental x64 build
 
 This directory is updated in place. The ZIP name remains stable across builds.
-Built-in update checking is temporarily disabled in 0.5.2-experimental.
+Built-in update checking is temporarily disabled in 0.5.3-experimental.
 
 Experimental effects:
 - DLSS\DLSS_ZeroMV, DLSS_ZeroMV_Jitter, DLSS_OpticalFlow
@@ -26,6 +26,11 @@ produce ghosting or unstable detail. See logs\magpie.log when reporting errors.
 DLSSFG keeps CPU/GPU fence synchronization. Repeated evaluation failures fall
 back to real captured frames and disable frame generation for that scaling
 session instead of retrying forever.
+
+Frame Generation now forces exact captured-frame duplicate filtering and no
+longer synthesizes repeated base frames to satisfy Magpie's minimum-FPS timer.
+XeSSFG also ignores frontend presents caused only by the software cursor or
+overlay, preventing mouse movement from inflating the SDK input frame rate.
 
 Smooth Motion compatibility restarts preserve window, minimized, or tray state,
 release shortcuts before replacement, and wait for the old process to exit.

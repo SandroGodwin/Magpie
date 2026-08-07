@@ -35,6 +35,19 @@ namespace Magpie {
 // 大多数时候会在最后添加 Bicubic 来降采样或升采样，因此缓存在内存中
 static EffectDesc bicubicDesc;
 
+static bool IsDLSSFrameGenerationEffect(std::string_view name) noexcept {
+	return name == "DLSSFG\\DLSS_FrameGeneration";
+}
+
+static bool IsXeSSFrameGenerationEffect(std::string_view name) noexcept {
+	return name == "XeSSFG\\XeSS_FrameGeneration_x2_ZeroMV" ||
+		name == "XeSSFG\\XeSS_MultiFrameGeneration_ZeroMV";
+}
+
+static bool IsFrameGenerationEffect(std::string_view name) noexcept {
+	return IsDLSSFrameGenerationEffect(name) || IsXeSSFrameGenerationEffect(name);
+}
+
 Renderer::Renderer() noexcept {}
 
 Renderer::~Renderer() noexcept {
@@ -99,8 +112,7 @@ ScalingError Renderer::Initialize(HWND hwndAttach, OverlayOptions& overlayOption
 	uint32_t xessFrameGenerationMultiplier = 2;
 	bool useDLSSFrameGeneration = false;
 	for (const EffectOption& effect : ScalingWindow::Get().Options().effects) {
-		if (effect.name == "XeSSFG\\XeSS_FrameGeneration_x2_ZeroMV" ||
-			effect.name == "XeSSFG\\XeSS_MultiFrameGeneration_ZeroMV") {
+		if (IsXeSSFrameGenerationEffect(effect.name)) {
 			++xessFrameGenerationEffectCount;
 			if (effect.name == "XeSSFG\\XeSS_MultiFrameGeneration_ZeroMV") {
 				auto it = effect.parameters.find("multiplier");
@@ -109,13 +121,14 @@ ScalingError Renderer::Initialize(HWND hwndAttach, OverlayOptions& overlayOption
 					static_cast<uint32_t>(std::lround(value)), 2u, 4u);
 			}
 		}
-		useDLSSFrameGeneration |= effect.name == "DLSSFG\\DLSS_FrameGeneration";
+		useDLSSFrameGeneration |= IsDLSSFrameGenerationEffect(effect.name);
 	}
 	if (xessFrameGenerationEffectCount > 1) {
 		Logger::Get().Error("Only one XeSS Frame Generation effect is allowed");
 		return ScalingError::ScalingFailedGeneral;
 	}
 	const bool useXeSSFrameGeneration = xessFrameGenerationEffectCount == 1;
+	_isXeSSFrameGenerationActive = useXeSSFrameGeneration;
 	if (useXeSSFrameGeneration && useDLSSFrameGeneration) {
 		Logger::Get().Error("XeSSFG and DLSSFG cannot be enabled in the same effect chain");
 		return ScalingError::ScalingFailedGeneral;
@@ -210,7 +223,7 @@ void Renderer::MessageHandler(UINT msg, WPARAM wParam, LPARAM lParam) noexcept {
 	// 有些鼠标操作需要渲染 ImGui 多次，见 https://github.com/ocornut/imgui/issues/2268
 	if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MOUSEWHEEL ||
 		msg == WM_MOUSEHWHEEL || msg == WM_LBUTTONUP || msg == WM_RBUTTONUP) {
-		_FrontendRender();
+		Render();
 	}
 }
 
@@ -316,9 +329,24 @@ void Renderer::_FrontendRender(bool waitForGpu) noexcept {
 }
 
 bool Renderer::Render(bool force, bool waitForGpu) noexcept {
-	if (!force && _lastAccessMutexKey == _sharedTextureMutexKey.load(std::memory_order_relaxed)) {
+	const bool hasNewBackendFrame =
+		_lastAccessMutexKey != _sharedTextureMutexKey.load(std::memory_order_relaxed);
+	if (!force && !hasNewBackendFrame) {
 		if (_lastAccessMutexKey == 0) {
 			// 第一帧尚未完成
+			return false;
+		}
+
+		// XeSSFG owns the presenting swap chain. Presenting only because Magpie's
+		// software cursor or overlay changed would make the SDK treat the same
+		// captured colour frame as a new game frame and inflate its input rate.
+		// Wait for the next genuinely new backend texture instead.
+		if (_isXeSSFrameGenerationActive) {
+			if (!_xessFgFrontendSuppressionLogged) {
+				_xessFgFrontendSuppressionLogged = true;
+				Logger::Get().Info(
+					"XeSSFG: suppressing cursor-only frontend presents until a new captured frame");
+			}
 			return false;
 		}
 
@@ -462,6 +490,15 @@ bool Renderer::_InitFrameSource() noexcept {
 
 	Logger::Get().Info(StrHelper::Concat("当前捕获模式: ", _frameSource->Name()));
 
+	const bool forceDuplicateFrameDetection = std::ranges::any_of(
+		ScalingWindow::Get().Options().effects,
+		[](const EffectOption& effect) { return IsFrameGenerationEffect(effect.name); });
+	_frameSource->ForceDuplicateFrameDetection(forceDuplicateFrameDetection);
+	if (forceDuplicateFrameDetection) {
+		Logger::Get().Info(
+			"Frame Generation: exact duplicate-frame filtering forced for captured input");
+	}
+
 	if (!_frameSource->Initialize(_backendResources, _backendDescriptorStore)) {
 		Logger::Get().Error("初始化 FrameSource 失败");
 		_backendInitError = ScalingError::CaptureFailed;
@@ -583,7 +620,7 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 		}
 		_nativeEffectBackends[i] = std::move(nativeBackend.backend);
 
-		if (effects[i].name == "DLSSFG\\DLSS_FrameGeneration") {
+		if (IsDLSSFrameGenerationEffect(effects[i].name)) {
 			if (dlssFrameGenerationMultiplier) {
 				Logger::Get().Error("Only one DLSS Frame Generation effect is allowed");
 				return nullptr;
@@ -1087,8 +1124,18 @@ HANDLE Renderer::_InitBackend() noexcept {
 		
 		// 测试着色器性能时最小帧率应设为无限大，但由于 /fp:fast 下无限大不可靠，因此改为使用 max()，
 		// 和无限大效果相同。
-		const float minFrameRate = options.IsBenchmarkMode()
-			? std::numeric_limits<float>::max() : options.minFrameRate;
+		const bool useFrameGeneration = std::ranges::any_of(
+			options.effects,
+			[](const EffectOption& effect) { return IsFrameGenerationEffect(effect.name); });
+		const float minFrameRate = useFrameGeneration
+			? 0.0f
+			: (options.IsBenchmarkMode()
+				? std::numeric_limits<float>::max() : options.minFrameRate);
+		if (useFrameGeneration &&
+			(options.minFrameRate > 0 || options.IsBenchmarkMode())) {
+			Logger::Get().Info(
+				"Frame Generation: minimum-FPS duplicate frame synthesis disabled");
+		}
 		_stepTimer.Initialize(minFrameRate, maxFrameRate);
 	}
 
@@ -1500,7 +1547,7 @@ LRESULT CALLBACK Renderer::_LowLevelKeyboardHook(int nCode, WPARAM wParam, LPARA
 			// 暂时隐藏光标
 			Renderer& renderer = ScalingWindow::Get().Renderer();
 			renderer._cursorDrawer.IsCursorVisible(false);
-			renderer._FrontendRender();
+			renderer.Render();
 
 			const uint32_t runId = ScalingWindow::RunId();
 
@@ -1512,7 +1559,7 @@ LRESULT CALLBACK Renderer::_LowLevelKeyboardHook(int nCode, WPARAM wParam, LPARA
 				!renderer._cursorDrawer.IsCursorVisible()
 			) {
 				renderer._cursorDrawer.IsCursorVisible(true);
-				renderer._FrontendRender();
+				renderer.Render();
 			}
 		});
 	}

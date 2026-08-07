@@ -40,7 +40,7 @@ function Find-MSBuild {
 }
 
 function Add-ConanToPath {
-    if (Get-Command conan.exe -ErrorAction SilentlyContinue) { return }
+    if (Get-Command conan -ErrorAction SilentlyContinue) { return }
 
     $roots = @(
         (Join-Path $env:LOCALAPPDATA "Programs\Python"),
