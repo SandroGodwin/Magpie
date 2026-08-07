@@ -26,11 +26,9 @@
 					                 HorizontalSpacing="8"
 					                 Orientation="Horizontal"
 					                 VerticalSpacing="6">
-						<Button x:Uid="Home_UpdateCard_DownloadAndInstall"
-						        Click="{x:Bind ViewModel.DownloadAndInstall}"
-						        Style="{StaticResource AccentButtonStyle}" />
 						<Button x:Uid="Home_UpdateCard_ReleaseNotes"
-						        Click="{x:Bind ViewModel.ReleaseNotes}" />
+						        Click="{x:Bind ViewModel.ReleaseNotes}"
+						        Style="{StaticResource AccentButtonStyle}" />
 						<Button x:Uid="Home_UpdateCard_RemindMeLater"
 						        Click="{x:Bind ViewModel.RemindMeLater}" />
 					</local:WrapPanel>

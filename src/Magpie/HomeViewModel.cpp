@@ -139,11 +139,7 @@ void HomeViewModel::DownloadAndInstall() {
 }
 
 void HomeViewModel::ReleaseNotes() {
-	std::wstring url = StrHelper::Concat(
-		L"https://github.com/Blinue/Magpie/releases/tag/",
-		UpdateService::Get().Tag()
-	);
-	Win32Helper::ShellOpen(url.c_str());
+	Win32Helper::ShellOpen(UpdateService::Get().ReleasePage().c_str());
 }
 
 void HomeViewModel::RemindMeLater() {

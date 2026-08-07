@@ -265,7 +265,7 @@
     <value>下載並安裝</value>
   </data>
   <data name="Home_UpdateCard_ReleaseNotes.Content" xml:space="preserve">
-    <value>發行說明</value>
+    <value>查看發布頁</value>
   </data>
   <data name="Home_UpdateCard_RemindMeLater.Content" xml:space="preserve">
     <value>以後再提醒我</value>
@@ -442,7 +442,7 @@
     <value>下載並安裝</value>
   </data>
   <data name="About_Version_UpdateCard_ReleaseNotes.Content" xml:space="preserve">
-    <value>發行說明</value>
+    <value>查看發布頁</value>
   </data>
   <data name="About_Version_UpdateCard_Retry.Content" xml:space="preserve">
     <value>重試</value>

@@ -1,5 +1,6 @@
 #pragma once
 #include "HalfResOpticalFlow.h"
+#include "NativeEffectBackend.h"
 
 namespace Magpie {
 
@@ -7,12 +8,12 @@ class DeviceResources;
 
 // Experimental DLSS-SR adapter for captured colour frames. Both depth and
 // motion vectors are deliberately cleared, and jitter is fixed at zero.
-class DLSSZeroMVUpscaler {
+class DLSSZeroMVUpscaler final : public NativeEffectBackend {
 public:
 	DLSSZeroMVUpscaler() = default;
 	DLSSZeroMVUpscaler(const DLSSZeroMVUpscaler&) = delete;
 	DLSSZeroMVUpscaler& operator=(const DLSSZeroMVUpscaler&) = delete;
-	~DLSSZeroMVUpscaler();
+	~DLSSZeroMVUpscaler() override;
 
 	bool Initialize(
 		DeviceResources& deviceResources,
@@ -26,9 +27,9 @@ public:
 		DeviceResources& deviceResources,
 		ID3D11Texture2D* input,
 		ID3D11Texture2D* output
-	) noexcept;
+	) noexcept override;
 
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept;
+	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
 
 private:
 	void _Reset() noexcept;

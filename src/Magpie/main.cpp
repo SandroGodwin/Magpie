@@ -20,6 +20,7 @@
 #include "TouchHelper.h"
 #include "CommonSharedConstants.h"
 #include "Logger.h"
+#include <shellapi.h>
 
 using namespace Magpie;
 using namespace winrt::Magpie::implementation;
@@ -28,6 +29,45 @@ using namespace winrt::Magpie::implementation;
 static void SetWorkingDir() noexcept {
 	FAIL_FAST_IF_WIN32_BOOL_FALSE(SetCurrentDirectory(
 		Win32Helper::GetExePath().parent_path().c_str()));
+}
+
+// Smooth Motion compatibility restarts launch the replacement before the old
+// process has finished destroying D3D resources.  Wait here, before creating
+// windows, mutexes, hooks or graphics devices, so the two instances never
+// overlap.
+static std::wstring NormalizeArgumentsAndWaitForParent() noexcept {
+	static constexpr std::wstring_view WAIT_PREFIX = L"--wait-for-pid=";
+
+	int argc = 0;
+	wil::unique_hlocal_ptr<wchar_t*> argv(CommandLineToArgvW(GetCommandLineW(), &argc));
+	if (!argv) {
+		return {};
+	}
+
+	DWORD parentPid = 0;
+	std::wstring normalized;
+	for (int i = 1; i < argc; ++i) {
+		const std::wstring_view argument = argv.get()[i];
+		if (argument.starts_with(WAIT_PREFIX)) {
+			const std::wstring pidText(argument.substr(WAIT_PREFIX.size()));
+			wchar_t* end = nullptr;
+			const unsigned long parsed = wcstoul(pidText.c_str(), &end, 10);
+			if (end != pidText.c_str() && *end == L'\0' && parsed <= MAXDWORD) {
+				parentPid = static_cast<DWORD>(parsed);
+			}
+		} else if (normalized.empty()) {
+			normalized.assign(argument);
+		}
+	}
+
+	if (parentPid && parentPid != GetCurrentProcessId()) {
+		wil::unique_handle parent(OpenProcess(SYNCHRONIZE, FALSE, parentPid));
+		if (parent) {
+			WaitForSingleObject(parent.get(), INFINITE);
+		}
+	}
+
+	return normalized;
 }
 
 static void InitializeLogger(const wchar_t* logFilePath) noexcept {
@@ -43,7 +83,7 @@ static void InitializeLogger(const wchar_t* logFilePath) noexcept {
 int APIENTRY wWinMain(
 	_In_ HINSTANCE /*hInstance*/,
 	_In_opt_ HINSTANCE /*hPrevInstance*/,
-	_In_ wchar_t* lpCmdLine,
+	_In_ wchar_t* /*lpCmdLine*/,
 	_In_ int /*nCmdShow*/
 ) {
 #ifdef _DEBUG
@@ -54,15 +94,17 @@ int APIENTRY wWinMain(
 	HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, nullptr, 0);
 
 	SetWorkingDir();
+	const std::wstring normalizedArguments = NormalizeArgumentsAndWaitForParent();
+	const wchar_t* arguments = normalizedArguments.c_str();
 
 	enum {
 		Normal,
 		RegisterTouchHelper,
 		UnRegisterTouchHelper
 	} mode = [&]() {
-		if (lpCmdLine == L"-r"sv) {
+		if (arguments == L"-r"sv) {
 			return RegisterTouchHelper;
-		} else if (lpCmdLine == L"-ur"sv) {
+		} else if (arguments == L"-ur"sv) {
 			return UnRegisterTouchHelper;
 		} else {
 			return Normal;
@@ -97,7 +139,7 @@ int APIENTRY wWinMain(
 	winrt::init_apartment(winrt::apartment_type::single_threaded);
 
 	auto& app = App::Get();
-	if (!app.Initialize(lpCmdLine)) {
+	if (!app.Initialize(arguments)) {
 		return 0;
 	}
 

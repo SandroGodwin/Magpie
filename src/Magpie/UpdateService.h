@@ -51,6 +51,11 @@ public:
 		return _tag;
 	}
 
+	const std::wstring& ReleasePage() const noexcept {
+		assert(_status >= UpdateStatus::Available);
+		return _releasePage;
+	}
+
 	const std::wstring& BinaryUrl() const noexcept {
 		assert(_status >= UpdateStatus::Available);
 		return _binaryUrl;
@@ -94,6 +99,7 @@ private:
 	winrt::Threading::ThreadPoolTimer _timer{ nullptr };
 
 	std::wstring _tag;
+	std::wstring _releasePage;
 	std::wstring _binaryUrl;
 	std::wstring _binaryHash;
 	UpdateStatus _status = UpdateStatus::Pending;

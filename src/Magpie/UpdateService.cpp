@@ -28,8 +28,13 @@ namespace Magpie {
 static constexpr Version MAGPIE_VERSION(MP_MAJOR_VERSION, MP_MINOR_VERSION, MP_PATCH_VERSION);
 
 static constexpr uint32_t MD5_HASH_LENGTH = 16;
+static constexpr bool UPDATE_CHECK_ENABLED = false;
 
 void UpdateService::Initialize() noexcept {
+	if constexpr (!UPDATE_CHECK_ENABLED) {
+		return;
+	}
+
 	// 只有发布版本能检查更新
 #ifdef MP_VERSION_STRING
 	AppSettings& settings = AppSettings::Get();
@@ -53,6 +58,10 @@ void UpdateService::Uninitialize() noexcept {
 }
 
 fire_and_forget UpdateService::CheckForUpdatesAsync(bool isAutoUpdate) {
+	if constexpr (!UPDATE_CHECK_ENABLED) {
+		co_return;
+	}
+
 	if (_status == UpdateStatus::Checking) {
 		co_return;
 	}
@@ -64,9 +73,8 @@ fire_and_forget UpdateService::CheckForUpdatesAsync(bool isAutoUpdate) {
 	try {
 		HttpClient httpClient;
 		IBuffer buffer = co_await httpClient.GetBufferAsync(
-			Uri(AppSettings::Get().IsCheckForPreviewUpdates()
-			? L"https://raw.githubusercontent.com/Blinue/Magpie/dev/version.json"
-			: L"https://raw.githubusercontent.com/Blinue/Magpie/main/version.json"));
+			Uri(L"https://raw.githubusercontent.com/SAOG0721/Magpie/"
+				L"experimental/rtx-video/version.json"));
 
 		doc.Parse((const char*)buffer.data(), buffer.Length());
 	} catch (const hresult_error& e) {
@@ -92,6 +100,16 @@ fire_and_forget UpdateService::CheckForUpdatesAsync(bool isAutoUpdate) {
 	}
 
 	auto rootObj = const_cast<const rapidjson::Document&>(doc).GetObj();
+
+	// During the transition from the upstream manifest, the fork branch may
+	// still expose the old self-installer schema. Treat it as no update instead
+	// of offering an upstream version or displaying an error.
+	if (!JsonHelper::ReadString(rootObj, "releasePage", _releasePage, true) ||
+		_releasePage.empty()) {
+		Logger::Get().Warn("Ignoring a legacy update manifest without releasePage");
+		_Status(UpdateStatus::NoUpdate);
+		co_return;
+	}
 
 	auto versionNode = rootObj.FindMember("version");
 	if (versionNode == rootObj.end()) {
@@ -123,6 +141,8 @@ fire_and_forget UpdateService::CheckForUpdatesAsync(bool isAutoUpdate) {
 		co_return;
 	}
 
+#if 0
+	// The upstream self-installer is intentionally disabled in this fork.
 	auto binaryNode = rootObj.FindMember("binary");
 	if (binaryNode == rootObj.end()) {
 		Logger::Get().Error("找不到 binary 成员");
@@ -168,6 +188,8 @@ fire_and_forget UpdateService::CheckForUpdatesAsync(bool isAutoUpdate) {
 		_Status(UpdateStatus::ErrorWhileChecking);
 		co_return;
 	}
+
+#endif
 
 	_Status(UpdateStatus::Available);
 	if (isAutoUpdate) {

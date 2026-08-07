@@ -98,6 +98,7 @@
       <AdditionalDependencies Condition="($(EnableDLSSZeroMV) Or $(EnableDLSSFrameGeneration)) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\lib\Windows_x86_64\x64\nvsdk_ngx_s.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">D3D12.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="$(EnableXeSSZeroMV) And '$(Platform)' == 'x64'">$(XeSSSdkDir)\lib\libxess.lib;D3D12.lib;%(AdditionalDependencies)</AdditionalDependencies>
+	  <AdditionalDependencies Condition="$(EnableXeSSFrameGeneration) And '$(Platform)' == 'x64'">$(XeSSSdkDir)\lib\libxess_fg.lib;$(XeSSSdkDir)\lib\libxell.lib;D3D12.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <DelayLoadDLLs>d3dcompiler_47.dll;Magnification.dll;Imagehlp.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
@@ -748,6 +749,11 @@
     <Copy SourceFiles="$(XeSSSdkDir)\LICENSE.txt" DestinationFiles="$(OutDir)\INTEL-XESS-LICENSE.txt" />
     <Copy SourceFiles="$(XeSSSdkDir)\third-party-programs.txt" DestinationFiles="$(OutDir)\INTEL-XESS-THIRD-PARTY.txt" />
   </Target>
+	<Target Name="CopyXeSSFrameGenerationRuntime" AfterTargets="Build" Condition="$(EnableXeSSFrameGeneration) And '$(Platform)' == 'x64'">
+	  <Copy SourceFiles="$(XeSSSdkDir)\bin\libxess.dll;$(XeSSSdkDir)\bin\libxess_fg.dll;$(XeSSSdkDir)\bin\libxell.dll" DestinationFolder="$(OutDir)" />
+	  <Copy SourceFiles="$(XeSSSdkDir)\LICENSE.txt" DestinationFiles="$(OutDir)\INTEL-XESS-LICENSE.txt" />
+	  <Copy SourceFiles="$(XeSSSdkDir)\third-party-programs.txt" DestinationFiles="$(OutDir)\INTEL-XESS-THIRD-PARTY.txt" />
+	</Target>
   <Target Name="CopyRTXVideoDenoiseRuntime" AfterTargets="Build" Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">
     <ItemGroup>
       <RTXVideoRuntimeDll Include="$(VFXRuntimeDir)\*.dll" />

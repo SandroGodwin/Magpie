@@ -24,10 +24,12 @@ Magpie 是一个轻量级的窗口超分辨率工具，内置众多高效的算�
 Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终颜色帧的实验功能：
 
 - NVIDIA DLSS Super Resolution：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
+- NVIDIA DLSS Frame Generation：可配置 x2/x3/x4 输出，使用虚拟时域输入。
 - AMD FidelityFX Super Resolution 2.2.1：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
 - AMD FidelityFX Super Resolution 3.1.5 上采样（不含帧生成）：通过 D3D11/D3D12 互操作提供零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流模式。
 - AMD FidelityFX Super Resolution 4.1.1 INT8：提供 Zero-MV、伪 jitter 和 50% 分辨率颜色光流实验模式。
 - Intel XeSS 3.0.1 Super Resolution：通过 D3D11/D3D12 互操作提供零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流模式。
+- Intel XeSS Frame Generation：提供通用显卡 x2 路径，以及 Intel Arc 显卡 x2-x4 多帧生成路径。
 - NVIDIA VideoSuperRes：同分辨率降噪和 VSR 放大。
 - MLAA，以及基于捕获颜色帧近似实现的 SMAA T2x/4x（含 jitter 与无 jitter 版本）。
 
@@ -67,6 +69,18 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 
 </details>
 
+#### 帧生成实验
+
+帧生成位于最终呈现阶段，使用虚拟零运动向量、平坦深度、零 jitter 和捕获颜色帧，而不是游戏引擎提供的时域数据。不要将帧生成 Effect 与 NVIDIA Smooth Motion 或另一个帧生成 Effect 同时使用。
+
+| Effect | 硬件与倍率 | 当前状态 |
+| --- | --- | --- |
+| DLSS Frame Generation | NVIDIA RTX；可配置 x2/x3/x4 | 实验功能。失败保护会继续显示真实捕获帧：第一次失败重置历史，随后只重建一次；若仍连续失败，只在当前缩放会话中禁用 DLSSFG。CPU/GPU Fence 同步继续保留。 |
+| XeSS Frame Generation x2 Zero-MV | 兼容的 Intel、NVIDIA 和 AMD GPU；x2 | 使用 XeSS-FG D3D12 代理交换链的通用显卡实验路径。 |
+| XeSS Multi-Frame Generation x2-x4 Zero-MV | Intel Arc；x2/x3/x4 | Arc 多帧生成实验路径。请求倍率会限制在 GPU 和驱动报告的能力范围内；非 Arc 硬件会限制或回退到 x2。 |
+
+这些路径可以提高显示帧率，但缺少游戏原生接入时，无法正确重建物体运动、UI 分离、反遮挡和镜头变化。它们可能增加延迟或产生插帧伪影，需要针对具体应用测试。
+
 #### FSR 2.2.1
 
 | Effect | 实测优点 | 实测缺点 | 推荐结论 |
@@ -99,7 +113,7 @@ RTX Video 提供同分辨率降噪和实际 VSR 放大。实测最适合 Galgame
 
 #### NVIDIA Smooth Motion 兼容模式
 
-通过 NVIDIA Profile Inspector 为 Magpie 启用 Smooth Motion 后，反复开始和停止缩放可能导致驱动驻留的显存持续增加。可在“设置 → 常规”中开启 Smooth Motion 兼容模式；开启后，Magpie 会在每次缩放结束时自动重启，利用进程退出释放这些驱动资源。该选项默认关闭，仅建议 Smooth Motion 用户启用。
+通过 NVIDIA Profile Inspector 为 Magpie 启用 Smooth Motion 后，反复开始和停止缩放可能导致驱动驻留的显存持续增加。可在“设置 → 常规”中开启 Smooth Motion 兼容模式；开启后，Magpie 会在每次缩放结束时自动重启，利用进程退出释放这些驱动资源。重启会保留 Magpie 原先处于普通窗口、最小化或托盘的状态；替代进程会等待旧进程完全退出后再初始化，旧进程也会在替代进程启动前释放快捷键。该选项默认关闭，仅建议 Smooth Motion 用户启用。
 
 #### Intel XeSS 3.0.1
 
@@ -131,11 +145,15 @@ XeSS 使用跨厂商 D3D12 DP4a 路径，可以在兼容的 Intel、NVIDIA 和 A
 
 如需编译可选后端，请自行新建 `src/BuildOptions.props.user`，并在其中设置功能开关和本机 SDK 路径。该文件已被 `.gitignore` 排除，只用于本机配置，不应提交到公共仓库。
 
+原生上采样器和 RTX Video 已统一通过 `NativeEffectBackend` 接口与 `NativeEffectBackendFactory` 分派，将各 SDK 的识别、创建、尺寸调整和绘制逻辑从 Renderer 主路径中移出。帧生成 Presenter 仍保持独立，因为它们需要在最终呈现阶段发布额外帧。
+
+各组件清单和发布前检查项见[第三方组件与再分发](docs/THIRD_PARTY_AND_REDISTRIBUTION.md)。
+
 ### 源码与二进制分发
 
 Magpie 派生源码继续采用 GPLv3，发布源码时必须保留上游版权和许可证声明。AMD FSR2/FSR3 和 Intel XeSS 具有各自的许可声明与条款；NVIDIA SDK 和运行库仍受 NVIDIA 专有条款约束。
 
-第三方文件可以下载，并不自动代表可以再次分发。不要将 SDK 目录、模型、wheel 或 NVIDIA DLL 提交进本仓库。把 GPLv3 Magpie 程序与 NVIDIA 专有组件组合成公开二进制 Release，仍需单独审核许可证兼容性和再分发权限。在审核完成前，建议只发布源码；或者发布不包含专有组件的构建，让用户从 NVIDIA 获取允许使用的依赖。本段是项目维护层面的谨慎建议，不构成法律意见。
+第三方文件可以下载，并不自动代表可以再次分发。不要将 SDK 目录、模型、wheel 或 NVIDIA DLL 提交进本仓库。把 GPLv3 Magpie 程序与 NVIDIA 专有组件组合成公开二进制 Release，仍需单独审核许可证兼容性和再分发权限；FSR4 能力检查绕过也需要单独确认条款和权限。审核完成前，建议只发布源码，或发布不含相关组件的构建。本段是项目维护层面的谨慎建议，不构成法律意见。
 
 👉 [Magpie 官方版本下载](https://github.com/Blinue/Magpie/releases)
 

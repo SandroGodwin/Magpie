@@ -83,6 +83,7 @@
     <ClInclude Include="SrcTracker.h" />
     <ClInclude Include="StepTimer.h" />
     <ClInclude Include="AdaptivePresenter.h" />
+	<ClInclude Include="XeSSFGPresenter.h" />
     <ClInclude Include="TextureHelper.h" />
     <ClInclude Include="YasHelper.h" />
     <ClInclude Include="DLSSZeroMVUpscaler.h" />
@@ -91,6 +92,8 @@
     <ClInclude Include="FSR3ZeroMVUpscaler.h" />
     <ClInclude Include="XeSSZeroMVUpscaler.h" />
     <ClInclude Include="HalfResOpticalFlow.h" />
+    <ClInclude Include="NativeEffectBackend.h" />
+    <ClInclude Include="NativeEffectBackendFactory.h" />
     <ClInclude Include="RTXVideoDenoiser.h" />
   </ItemGroup>
   <ItemGroup>
@@ -124,6 +127,7 @@
     <ClCompile Include="ScalingOptions.cpp" />
     <ClCompile Include="ScalingRuntime.cpp" />
     <ClCompile Include="ScalingWindow.cpp" />
+	<ClCompile Include="XeSSFGPresenter.cpp" />
     <ClCompile Include="ScreenshotHelper.cpp" />
     <ClCompile Include="SrcTracker.cpp" />
     <ClCompile Include="StepTimer.cpp" />
@@ -137,6 +141,7 @@
     <ClCompile Include="FSR3ZeroMVUpscaler.cpp" />
     <ClCompile Include="XeSSZeroMVUpscaler.cpp" />
     <ClCompile Include="HalfResOpticalFlow.cpp" />
+    <ClCompile Include="NativeEffectBackendFactory.cpp" />
     <ClCompile Include="RTXVideoDenoiser.cpp" />
     <ClCompile Include="$(VFXSdkDir)\nvvfx\src\NVVideoEffectsProxy.cpp" Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

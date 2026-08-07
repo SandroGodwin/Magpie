@@ -17,11 +17,11 @@ public:
 	~DLSSFrameGenerator();
 
 	bool Initialize(DeviceResources& resources, ID3D11Texture2D* input,
-		ID3D11Texture2D* output, uint32_t multiplier) noexcept;
-	bool Resize(DeviceResources& resources, ID3D11Texture2D* input,
-		ID3D11Texture2D* output) noexcept;
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output,
+		uint32_t multiplier) noexcept;
+	bool Resize(DeviceResources& resources, ID3D11Texture2D* input) noexcept;
+	bool Draw(ID3D11Texture2D* input,
 		const PublishCallback& publishGeneratedFrame) noexcept;
+	void RequestHistoryReset() noexcept;
 
 	uint32_t Multiplier() const noexcept;
 

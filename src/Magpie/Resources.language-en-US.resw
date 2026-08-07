@@ -262,7 +262,7 @@
     <value>Download and install</value>
   </data>
   <data name="Home_UpdateCard_ReleaseNotes.Content" xml:space="preserve">
-    <value>Release notes</value>
+    <value>View release page</value>
   </data>
   <data name="Home_UpdateCard_RemindMeLater.Content" xml:space="preserve">
     <value>Remind me later</value>
@@ -505,7 +505,7 @@
     <value>Download and install</value>
   </data>
   <data name="About_Version_UpdateCard_ReleaseNotes.Content" xml:space="preserve">
-    <value>Release notes</value>
+    <value>View release page</value>
   </data>
   <data name="About_Version_UpdateCard_Retry.Content" xml:space="preserve">
     <value>Try again</value>

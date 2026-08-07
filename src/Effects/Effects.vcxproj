@@ -23,6 +23,14 @@
     </CopyFileToFolders>
   </ItemDefinitionGroup>
   <ItemGroup>
+	<CopyFileToFolders Include="XeSSFG\XeSS_FrameGeneration_x2_ZeroMV.hlsl">
+	  <FileType>Document</FileType>
+	  <DeploymentContent>true</DeploymentContent>
+	</CopyFileToFolders>
+	<CopyFileToFolders Include="XeSSFG\XeSS_MultiFrameGeneration_ZeroMV.hlsl">
+	  <FileType>Document</FileType>
+	  <DeploymentContent>true</DeploymentContent>
+	</CopyFileToFolders>
 	<CopyFileToFolders Include="DLSSFG\DLSS_FrameGeneration.hlsl">
 	  <FileType>Document</FileType>
 	  <DeploymentContent>true</DeploymentContent>

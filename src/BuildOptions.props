@@ -27,6 +27,8 @@
     <FSR3SdkDir></FSR3SdkDir>
     <!-- Cross-vendor XeSS-SR through D3D11/D3D12 shared resources. -->
     <EnableXeSSZeroMV>false</EnableXeSSZeroMV>
+	<!-- Cross-vendor XeSS Frame Generation x2 through a D3D12 proxy swap chain. -->
+	<EnableXeSSFrameGeneration>false</EnableXeSSFrameGeneration>
     <XeSSSdkDir></XeSSSdkDir>
     <!-- NVIDIA Video Super Resolution same-resolution denoise modes (8-11). -->
     <EnableRTXVideoDenoise>false</EnableRTXVideoDenoise>

@@ -274,15 +274,20 @@ void App::Restart(bool asElevated, const wchar_t* arguments) noexcept {
 
 void App::RestartForSmoothMotion() noexcept {
 	const HWND hwndMain = _mainWindow->Handle();
-	const wchar_t* arguments = nullptr;
+	const wchar_t* stateArgument = nullptr;
 
 	if (!hwndMain) {
-		arguments = START_IN_TRAY_ARGUMENT;
+		stateArgument = START_IN_TRAY_ARGUMENT;
 	} else if (IsIconic(hwndMain)) {
-		arguments = START_MINIMIZED_ARGUMENT;
+		stateArgument = START_MINIMIZED_ARGUMENT;
 	}
 
-	Restart(false, arguments);
+	std::wstring arguments = L"--wait-for-pid=" + std::to_wstring(GetCurrentProcessId());
+	if (stateArgument) {
+		arguments += L" ";
+		arguments += stateArgument;
+	}
+	Restart(false, arguments.c_str());
 }
 
 const com_ptr<RootPage>& App::RootPage() const noexcept {

@@ -238,8 +238,7 @@ Uri AboutViewModel::UpdateReleaseNotesLink() const noexcept {
 		return nullptr;
 	}
 
-	return Uri(StrHelper::Concat(L"https://github.com/Blinue/Magpie/releases/tag/",
-		UpdateService::Get().Tag()));
+	return Uri(UpdateService::Get().ReleasePage());
 }
 
 fire_and_forget AboutViewModel::DownloadAndInstall() {

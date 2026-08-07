@@ -1,21 +1,22 @@
 #pragma once
 #include "HalfResOpticalFlow.h"
+#include "NativeEffectBackend.h"
 
 namespace Magpie {
 
 class DeviceResources;
 
-class FSR2ZeroMVUpscaler {
+class FSR2ZeroMVUpscaler final : public NativeEffectBackend {
 public:
 	FSR2ZeroMVUpscaler() = default;
 	FSR2ZeroMVUpscaler(const FSR2ZeroMVUpscaler&) = delete;
 	FSR2ZeroMVUpscaler& operator=(const FSR2ZeroMVUpscaler&) = delete;
-	~FSR2ZeroMVUpscaler();
+	~FSR2ZeroMVUpscaler() override;
 
 	bool Initialize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output,
 		bool enableOpticalFlow = false, bool enableJitter = false) noexcept;
-	bool Resize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept;
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept;
+	bool Resize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
+	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
 
 private:
 	void _Reset() noexcept;

@@ -18,12 +18,10 @@
 #include "StrHelper.h"
 #include "TextureHelper.h"
 #include "Win32Helper.h"
-#include "DLSSZeroMVUpscaler.h"
 #include "DLSSFrameGenerator.h"
-#include "FSR2ZeroMVUpscaler.h"
-#include "FSR3ZeroMVUpscaler.h"
-#include "XeSSZeroMVUpscaler.h"
-#include "RTXVideoDenoiser.h"
+#include "NativeEffectBackend.h"
+#include "NativeEffectBackendFactory.h"
+#include "XeSSFGPresenter.h"
 #ifdef MP_USE_COMPSWAPCHAIN
 #include "CompSwapchainPresenter.h"
 #else
@@ -97,6 +95,39 @@ ScalingError Renderer::Initialize(HWND hwndAttach, OverlayOptions& overlayOption
 	// 每次创建 D3D 设备后尝试提高 GPU 优先级，OBS 也是这么做的
 	SetGpuPriority();
 
+	uint32_t xessFrameGenerationEffectCount = 0;
+	uint32_t xessFrameGenerationMultiplier = 2;
+	bool useDLSSFrameGeneration = false;
+	for (const EffectOption& effect : ScalingWindow::Get().Options().effects) {
+		if (effect.name == "XeSSFG\\XeSS_FrameGeneration_x2_ZeroMV" ||
+			effect.name == "XeSSFG\\XeSS_MultiFrameGeneration_ZeroMV") {
+			++xessFrameGenerationEffectCount;
+			if (effect.name == "XeSSFG\\XeSS_MultiFrameGeneration_ZeroMV") {
+				auto it = effect.parameters.find("multiplier");
+				const float value = it == effect.parameters.end() ? 2.0f : it->second;
+				xessFrameGenerationMultiplier = std::clamp(
+					static_cast<uint32_t>(std::lround(value)), 2u, 4u);
+			}
+		}
+		useDLSSFrameGeneration |= effect.name == "DLSSFG\\DLSS_FrameGeneration";
+	}
+	if (xessFrameGenerationEffectCount > 1) {
+		Logger::Get().Error("Only one XeSS Frame Generation effect is allowed");
+		return ScalingError::ScalingFailedGeneral;
+	}
+	const bool useXeSSFrameGeneration = xessFrameGenerationEffectCount == 1;
+	if (useXeSSFrameGeneration && useDLSSFrameGeneration) {
+		Logger::Get().Error("XeSSFG and DLSSFG cannot be enabled in the same effect chain");
+		return ScalingError::ScalingFailedGeneral;
+	}
+
+	if (useXeSSFrameGeneration) {
+		_presenter = std::make_unique<XeSSFGPresenter>(xessFrameGenerationMultiplier);
+		if (!_presenter->Initialize(hwndAttach, _frontendResources)) {
+			Logger::Get().Error("初始化 XeSSFGPresenter 失败");
+			return ScalingError::ScalingFailedGeneral;
+		}
+	} else {
 #ifdef MP_USE_COMPSWAPCHAIN
 	_presenter = std::make_unique<CompSwapchainPresenter>();
 	if (!_presenter->Initialize(hwndAttach, _frontendResources)) {
@@ -107,6 +138,7 @@ ScalingError Renderer::Initialize(HWND hwndAttach, OverlayOptions& overlayOption
 		Logger::Get().Error("初始化 AdaptivePresenter 失败");
 #endif
 		return ScalingError::ScalingFailedGeneral;
+	}
 	}
 
 	// 等待后端初始化完成
@@ -521,18 +553,11 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 	}
 
 	_effectDrawers.resize(effectCount);
-	_dlssZeroMVUpscalers.clear();
-	_dlssZeroMVUpscalers.resize(effectCount);
-	_fsr2ZeroMVUpscalers.clear();
-	_fsr2ZeroMVUpscalers.resize(effectCount);
-	_fsr3ZeroMVUpscalers.clear();
-	_fsr3ZeroMVUpscalers.resize(effectCount);
-	_xessZeroMVUpscalers.clear();
-	_xessZeroMVUpscalers.resize(effectCount);
-	_rtxVideoDenoisers.clear();
-	_rtxVideoDenoisers.resize(effectCount);
+	_nativeEffectBackends.clear();
+	_nativeEffectBackends.resize(effectCount);
 	_dlssFrameGenerator.reset();
-	_dlssFrameGenerationOutput = nullptr;
+	_dlssFgConsecutiveFailures = 0;
+	_dlssFgRecoveryAttempts = 0;
 	uint32_t dlssFrameGenerationMultiplier = 0;
 
 	ID3D11Texture2D* inOutTexture = _frameSource->GetOutput();
@@ -548,95 +573,15 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 			return nullptr;
 		}
 
-		if (effects[i].name == "DLSS\\DLSS_ZeroMV" ||
-			effects[i].name == "DLSS\\DLSS_ZeroMV_Jitter" ||
-			effects[i].name == "DLSS\\DLSS_OpticalFlow") {
-			auto upscaler = std::make_unique<DLSSZeroMVUpscaler>();
-			if (!upscaler->Initialize(
-				_backendResources,
-				_effectDrawers[i].GetTexture(0),
-				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name == "DLSS\\DLSS_ZeroMV_Jitter",
-				effects[i].name == "DLSS\\DLSS_OpticalFlow"
-			)) {
-				Logger::Get().Error("Initialize DLSS Zero-MV failed");
-				return nullptr;
-			}
-			_dlssZeroMVUpscalers[i] = std::move(upscaler);
+		NativeEffectBackendResult nativeBackend = CreateNativeEffectBackend(
+			effects[i].name,
+			_backendResources,
+			_effectDrawers[i].GetTexture(0),
+			_effectDrawers[i].GetOutputTexture());
+		if (nativeBackend.recognized && !nativeBackend.backend) {
+			return nullptr;
 		}
-
-		if (effects[i].name == "FSR2\\FSR2_ZeroMV" ||
-			effects[i].name == "FSR2\\FSR2_ZeroMV_Jitter" ||
-			effects[i].name == "FSR2\\FSR2_OpticalFlow") {
-			auto upscaler = std::make_unique<FSR2ZeroMVUpscaler>();
-			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
-				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name == "FSR2\\FSR2_OpticalFlow",
-				effects[i].name == "FSR2\\FSR2_ZeroMV_Jitter")) {
-				Logger::Get().Error("Initialize FSR2 Zero-MV failed");
-				return nullptr;
-			}
-			_fsr2ZeroMVUpscalers[i] = std::move(upscaler);
-		}
-
-		const bool isFsr3 = effects[i].name == "FSR3\\FSR3_ZeroMV" ||
-			effects[i].name == "FSR3\\FSR3_ZeroMV_Jitter" ||
-			effects[i].name == "FSR3\\FSR3_OpticalFlow";
-		const bool isFsr4 = effects[i].name == "FSR4\\FSR4_ZeroMV" ||
-			effects[i].name == "FSR4\\FSR4_ZeroMV_Jitter" ||
-			effects[i].name == "FSR4\\FSR4_OpticalFlow";
-		if (isFsr3 || isFsr4) {
-			auto upscaler = std::make_unique<FSR3ZeroMVUpscaler>();
-			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
-				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name.ends_with("OpticalFlow"),
-				effects[i].name.ends_with("ZeroMV_Jitter"), isFsr4)) {
-				Logger::Get().Error(isFsr4 ? "Initialize FSR4 failed" : "Initialize FSR3 failed");
-				return nullptr;
-			}
-			_fsr3ZeroMVUpscalers[i] = std::move(upscaler);
-		}
-
-		if (effects[i].name == "XeSS\\XeSS_ZeroMV" ||
-			effects[i].name == "XeSS\\XeSS_ZeroMV_Jitter" ||
-			effects[i].name == "XeSS\\XeSS_OpticalFlow") {
-			auto upscaler = std::make_unique<XeSSZeroMVUpscaler>();
-			if (!upscaler->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
-				_effectDrawers[i].GetOutputTexture(),
-				effects[i].name == "XeSS\\XeSS_OpticalFlow",
-				effects[i].name == "XeSS\\XeSS_ZeroMV_Jitter")) {
-				Logger::Get().Error("Initialize XeSS Zero-MV failed");
-				return nullptr;
-			}
-			_xessZeroMVUpscalers[i] = std::move(upscaler);
-		}
-
-		if (effects[i].name == "RTXVideo\\RTXVideo_Denoise_Low" ||
-			effects[i].name == "RTXVideo\\RTXVideo_Denoise_Medium" ||
-			effects[i].name == "RTXVideo\\RTXVideo_Denoise_High" ||
-			effects[i].name == "RTXVideo\\RTXVideo_Denoise_Ultra" ||
-			effects[i].name == "RTXVideo\\RTXVideo_VSR_Low" ||
-			effects[i].name == "RTXVideo\\RTXVideo_VSR_Medium" ||
-			effects[i].name == "RTXVideo\\RTXVideo_VSR_High" ||
-			effects[i].name == "RTXVideo\\RTXVideo_VSR_Ultra") {
-			uint32_t qualityLevel = 8;
-			const bool isVSRUpscale = effects[i].name.find("_VSR_") != std::string::npos;
-			if (isVSRUpscale) {
-				qualityLevel = effects[i].name.ends_with("_Low") ? 1 :
-					effects[i].name.ends_with("_Medium") ? 2 :
-					effects[i].name.ends_with("_High") ? 3 : 4;
-			} else if (effects[i].name.ends_with("_Medium")) qualityLevel = 9;
-			else if (effects[i].name.ends_with("_High")) qualityLevel = 10;
-			else if (effects[i].name.ends_with("_Ultra")) qualityLevel = 11;
-
-			auto denoiser = std::make_unique<RTXVideoDenoiser>();
-			if (!denoiser->Initialize(_backendResources, _effectDrawers[i].GetTexture(0),
-				_effectDrawers[i].GetOutputTexture(), qualityLevel)) {
-				Logger::Get().Error("Initialize RTX Video denoise failed");
-				return nullptr;
-			}
-			_rtxVideoDenoisers[i] = std::move(denoiser);
-		}
+		_nativeEffectBackends[i] = std::move(nativeBackend.backend);
 
 		if (effects[i].name == "DLSSFG\\DLSS_FrameGeneration") {
 			if (dlssFrameGenerationMultiplier) {
@@ -782,32 +727,9 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 			return nullptr;
 		}
 
-		if (_dlssZeroMVUpscalers[i] && !_dlssZeroMVUpscalers[i]->Resize(
-			_backendResources,
-			_effectDrawers[i].GetTexture(0),
-			_effectDrawers[i].GetOutputTexture()
-		)) {
-			Logger::Get().Error("Resize DLSS Zero-MV failed");
-			return nullptr;
-		}
-		if (_fsr2ZeroMVUpscalers[i] && !_fsr2ZeroMVUpscalers[i]->Resize(
+		if (_nativeEffectBackends[i] && !_nativeEffectBackends[i]->Resize(
 			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
-			Logger::Get().Error("Resize FSR2 Zero-MV failed");
-			return nullptr;
-		}
-		if (_fsr3ZeroMVUpscalers[i] && !_fsr3ZeroMVUpscalers[i]->Resize(
-			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
-			Logger::Get().Error("Resize FSR3 Zero-MV failed");
-			return nullptr;
-		}
-		if (_xessZeroMVUpscalers[i] && !_xessZeroMVUpscalers[i]->Resize(
-			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
-			Logger::Get().Error("Resize XeSS Zero-MV failed");
-			return nullptr;
-		}
-		if (_rtxVideoDenoisers[i] && !_rtxVideoDenoisers[i]->Resize(
-			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
-			Logger::Get().Error("Resize RTX Video denoise failed");
+			Logger::Get().Error(fmt::format("Resize native effect {} failed", effects[i].name));
 			return nullptr;
 		}
 	}
@@ -872,23 +794,8 @@ bool Renderer::_InitializeDLSSFrameGenerator(
 	ID3D11Texture2D* input,
 	uint32_t multiplier
 ) noexcept {
-	D3D11_TEXTURE2D_DESC desc{};
-	input->GetDesc(&desc);
-	_dlssFrameGenerationOutput = DirectXHelper::CreateTexture2D(
-		_backendResources.GetD3DDevice(),
-		desc.Format,
-		desc.Width,
-		desc.Height,
-		D3D11_BIND_SHADER_RESOURCE
-	);
-	if (!_dlssFrameGenerationOutput) {
-		Logger::Get().Error("Create DLSSFG output texture failed");
-		return false;
-	}
-
 	auto frameGenerator = std::make_unique<DLSSFrameGenerator>();
-	if (!frameGenerator->Initialize(
-		_backendResources, input, _dlssFrameGenerationOutput.get(), multiplier)) {
+	if (!frameGenerator->Initialize(_backendResources, input, multiplier)) {
 		return false;
 	}
 	if (_frameRateFilterTarget > 0.0f) {
@@ -901,6 +808,39 @@ bool Renderer::_InitializeDLSSFrameGenerator(
 	}
 	_dlssFrameGenerator = std::move(frameGenerator);
 	return true;
+}
+
+void Renderer::_HandleDLSSFrameGenerationFailure(ID3D11Texture2D* input) noexcept {
+	if (!_dlssFrameGenerator) {
+		return;
+	}
+
+	++_dlssFgConsecutiveFailures;
+	if (_dlssFgConsecutiveFailures == 1) {
+		Logger::Get().Warn(
+			"DLSS Frame Generation failed; resetting history and presenting real frames");
+		_dlssFrameGenerator->RequestHistoryReset();
+		return;
+	}
+
+	if (_dlssFgRecoveryAttempts == 0) {
+		++_dlssFgRecoveryAttempts;
+		const uint32_t multiplier = _dlssFrameGenerator->Multiplier();
+		Logger::Get().Warn("DLSS Frame Generation failed again; recreating the feature once");
+		if (_InitializeDLSSFrameGenerator(input, multiplier)) {
+			_dlssFgConsecutiveFailures = 0;
+			return;
+		}
+	}
+
+	_DisableDLSSFrameGenerationForSession();
+}
+
+void Renderer::_DisableDLSSFrameGenerationForSession() noexcept {
+	_dlssFrameGenerator.reset();
+	_synchronousPresentInterval = {};
+	Logger::Get().Error(
+		"DLSS Frame Generation was disabled for this scaling session after repeated failures");
 }
 
 void Renderer::_UpdateDestRect() noexcept {
@@ -1206,28 +1146,10 @@ void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 
 	for (uint32_t i = 0; i < _effectDrawers.size(); ++i) {
 		const EffectDrawer& effectDrawer = _effectDrawers[i];
-		if (i < _rtxVideoDenoisers.size() && _rtxVideoDenoisers[i]) {
-			if (!_rtxVideoDenoisers[i]->Draw(
+		if (i < _nativeEffectBackends.size() && _nativeEffectBackends[i]) {
+			if (!_nativeEffectBackends[i]->Draw(
 				effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture())) {
-				Logger::Get().Error("Draw RTX Video denoise failed");
-			}
-			_effectsProfiler.OnEndPass(d3dDC);
-		} else if (i < _xessZeroMVUpscalers.size() && _xessZeroMVUpscalers[i]) {
-			if (!_xessZeroMVUpscalers[i]->Draw(effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture()))
-				Logger::Get().Error("Draw XeSS Zero-MV failed");
-			_effectsProfiler.OnEndPass(d3dDC);
-		} else if (i < _fsr3ZeroMVUpscalers.size() && _fsr3ZeroMVUpscalers[i]) {
-			if (!_fsr3ZeroMVUpscalers[i]->Draw(effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture()))
-				Logger::Get().Error("Draw FSR3 Zero-MV failed");
-			_effectsProfiler.OnEndPass(d3dDC);
-		} else if (i < _fsr2ZeroMVUpscalers.size() && _fsr2ZeroMVUpscalers[i]) {
-			if (!_fsr2ZeroMVUpscalers[i]->Draw(effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture()))
-				Logger::Get().Error("Draw FSR2 Zero-MV failed");
-			_effectsProfiler.OnEndPass(d3dDC);
-		} else if (i < _dlssZeroMVUpscalers.size() && _dlssZeroMVUpscalers[i]) {
-			if (!_dlssZeroMVUpscalers[i]->Draw(
-				effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture())) {
-				Logger::Get().Error("Draw DLSS Zero-MV failed");
+				Logger::Get().Error("Draw native effect failed");
 			}
 			_effectsProfiler.OnEndPass(d3dDC);
 		} else {
@@ -1240,13 +1162,14 @@ void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 	if (_dlssFrameGenerator) {
 		const bool generated = _dlssFrameGenerator->Draw(
 			effectsOutput,
-			_dlssFrameGenerationOutput.get(),
 			[this](ID3D11Texture2D* generatedFrame) {
 				return _PublishBackendTexture(generatedFrame, true);
 			}
 		);
 		if (!generated) {
-			Logger::Get().Error("DLSS Frame Generation failed; presenting the captured frame");
+			_HandleDLSSFrameGenerationFailure(effectsOutput);
+		} else {
+			_dlssFgConsecutiveFailures = 0;
 		}
 	}
 

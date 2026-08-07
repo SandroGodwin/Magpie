@@ -24,10 +24,12 @@ This repository is an independent experimental fork of [Blinue/Magpie](https://g
 The fork owner used OpenAI Codex as a development assistant to add and test experimental colour-frame-only integrations for:
 
 - NVIDIA DLSS Super Resolution with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
+- NVIDIA DLSS Frame Generation with configurable 2x/3x/4x output and virtual temporal inputs.
 - AMD FidelityFX Super Resolution 2.2.1 with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
 - AMD FidelityFX Super Resolution 3.1.5 upscaling (without frame generation) through D3D11/D3D12 interoperability, with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
 - AMD FidelityFX Super Resolution 4.1.1 INT8 with experimental Zero-MV, synthetic-jitter, and 50%-resolution colour-optical-flow modes.
 - Intel XeSS 3.0.1 Super Resolution with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow through D3D11/D3D12 interoperability.
+- Intel XeSS Frame Generation with a cross-vendor x2 path and an Intel Arc x2-x4 multi-frame path.
 - NVIDIA VideoSuperRes for same-resolution denoising and VSR upscaling.
 - MLAA and captured-colour-frame approximations of SMAA T2x/4x, with jittered and non-jittered variants.
 
@@ -67,6 +69,18 @@ Creating a dedicated Magpie application profile in NVIDIA Profile Inspector is r
 
 </details>
 
+#### Frame Generation experiments
+
+Frame Generation runs at the final presentation stage and uses virtual zero motion vectors, flat depth, zero jitter, and captured colour frames rather than engine-provided temporal data. Do not combine a Frame Generation Effect with NVIDIA Smooth Motion or another Frame Generation Effect.
+
+| Effect | Hardware and multiplier | Current status |
+| --- | --- | --- |
+| DLSS Frame Generation | NVIDIA RTX; configurable x2/x3/x4 | Experimental. Failure protection keeps real captured frames visible, first resets history, then recreates the feature once, and finally disables DLSSFG only for the current scaling session after repeated failures. CPU/GPU fence synchronization remains enabled. |
+| XeSS Frame Generation x2 Zero-MV | Compatible Intel, NVIDIA, and AMD GPUs; x2 | Experimental cross-vendor path using the XeSS-FG D3D12 proxy swap chain. |
+| XeSS Multi-Frame Generation x2-x4 Zero-MV | Intel Arc; x2/x3/x4 | Experimental Arc multi-frame path. The requested multiplier is clamped to the capability reported by the GPU and driver; non-Arc hardware is limited or falls back to x2. |
+
+These paths can increase displayed frame rate but cannot reconstruct correct object motion, UI separation, disocclusion, or camera changes without game integration. They may add latency or visible interpolation artefacts and should be tested per application.
+
 #### FSR 2.2.1
 
 | Effect | Observed advantages | Observed disadvantages | Recommendation |
@@ -99,7 +113,7 @@ The trade-off is that RTX Video is NVIDIA-only and its VFX runtime and models gr
 
 #### NVIDIA Smooth Motion compatibility mode
 
-When Smooth Motion is enabled for Magpie through NVIDIA Profile Inspector, repeatedly starting and stopping scaling may cause driver-retained GPU memory to grow. Enable Smooth Motion compatibility mode under **Settings → General** to restart Magpie after each scaling session, allowing process exit to release those driver resources. The option is disabled by default and is intended only for Smooth Motion users.
+When Smooth Motion is enabled for Magpie through NVIDIA Profile Inspector, repeatedly starting and stopping scaling may cause driver-retained GPU memory to grow. Enable Smooth Motion compatibility mode under **Settings → General** to restart Magpie after each scaling session, allowing process exit to release those driver resources. The restart path preserves whether Magpie was windowed, minimized, or in the tray; the replacement waits for the previous process to exit before initializing and the old process releases shortcuts before replacement. The option is disabled by default and is intended only for Smooth Motion users.
 
 #### Intel XeSS 3.0.1
 
@@ -131,11 +145,15 @@ Third-party SDKs, models, wheels, and proprietary NVIDIA binaries are not part o
 
 To build the optional backends, create `src/BuildOptions.props.user` and define the feature switches and local SDK paths there. The file is excluded by `.gitignore`; it is machine-specific and must not be committed to the public repository.
 
+Native upscalers and RTX Video are dispatched through the shared `NativeEffectBackend` interface and `NativeEffectBackendFactory`. This keeps SDK-specific detection, creation, resize, and draw logic out of the main Renderer path. Frame-generation presenters remain separate because they publish additional frames at the terminal presentation stage.
+
+See [Third-party components and redistribution](docs/THIRD_PARTY_AND_REDISTRIBUTION.md) for the per-component inventory and release checklist.
+
 ### Source and binary distribution
 
 The Magpie-derived source remains licensed under GPLv3. Source distributions must preserve the upstream copyright and license notices. AMD FSR2/FSR3 and Intel XeSS have their own notices and terms. NVIDIA SDKs and runtime files remain under NVIDIA's proprietary terms.
 
-Do not treat a GitHub download link as permission to redistribute a third-party SDK. In particular, do not commit SDK folders, models, wheels, or NVIDIA DLLs to this repository. Public binary releases that combine GPLv3 Magpie code with proprietary NVIDIA components require a separate license-compatibility and redistribution review. Until that review is complete, publish source code only, or publish builds without the proprietary components and have users obtain permitted dependencies from NVIDIA. This is a project-maintainer precaution, not legal advice.
+Do not treat a GitHub download link as permission to redistribute a third-party SDK. In particular, do not commit SDK folders, models, wheels, or NVIDIA DLLs to this repository. Public binary releases that combine GPLv3 Magpie code with proprietary NVIDIA components require a separate license-compatibility and redistribution review. The FSR 4 capability-check override likewise requires a specific terms/permission review before binary distribution. Until those reviews are complete, publish source code only, or publish builds without the affected components. This is a project-maintainer precaution, not legal advice.
 
 👉 [Original Magpie releases](https://github.com/Blinue/Magpie/releases)
 

@@ -88,6 +88,9 @@ ConanFile = conanFiles.ToArray();
       <ProfileFile Include="$(ProfileName)">
         <OutputConandepsProps>@(ConanFile->'%(OutputConandepsProps)')</OutputConandepsProps>
       </ProfileFile>
+      <ProfileFile Include="$(SolutionDir)conan-locks\%(ConanFile.ProjectName).lock">
+        <OutputConandepsProps>@(ConanFile->'%(OutputConandepsProps)')</OutputConandepsProps>
+      </ProfileFile>
     </ItemGroup>
     <GetOutOfDateItems Sources="@(ProfileFile)" OutputsMetadataName="OutputConandepsProps" TLogDirectory="$(TLogLocation)" TLogNamePrefix="$(MSBuildProjectName)-Profile" TrackFileAccess="$(TrackFileAccess)">
       <Output TaskParameter="OutOfDateSources" ItemName="OutOfDateProfile" />
@@ -118,6 +121,6 @@ ConanFile = conanFiles.ToArray();
       <AdditionalOptions Condition="$(VS17) And !$(UseClangCL)">-s:a compiler.version=194 $(AdditionalOptions)</AdditionalOptions>
     </PropertyGroup>
     <!-- 批量处理 ConanFile 中的元素 -->
-    <Exec Condition="'@(ConanFile)' != ''" Command="conan install &quot;%(ConanFile.FullPath)&quot; -pr:a=$(ProfileName) --output-folder &quot;$(IntDir)%(ConanFile.ProjectName)&quot; -s:a build_type=$(Configuration) -s:a arch=$(ConanInstallArch) $(AdditionalOptions) --build=missing --update" />
+    <Exec Condition="'@(ConanFile)' != ''" Command="conan install &quot;%(ConanFile.FullPath)&quot; -pr:a=$(ProfileName) --lockfile=&quot;$(SolutionDir)conan-locks\%(ConanFile.ProjectName).lock&quot; --output-folder &quot;$(IntDir)%(ConanFile.ProjectName)&quot; -s:a build_type=$(Configuration) -s:a arch=$(ConanInstallArch) $(AdditionalOptions) --build=missing" />
   </Target>
 </Project>

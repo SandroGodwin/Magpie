@@ -25,10 +25,13 @@
       <AdditionalIncludeDirectories Condition="$(EnableFSR3ZeroMV) And '$(Platform)' == 'x64'">$(FSR3SdkDir)\Kits\FidelityFX\api\include;$(FSR3SdkDir)\Kits\FidelityFX\upscalers\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(EnableXeSSZeroMV) And '$(Platform)' == 'x64'">MP_ENABLE_XESS_ZEROMV;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories Condition="$(EnableXeSSZeroMV) And '$(Platform)' == 'x64'">$(XeSSSdkDir)\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+	  <PreprocessorDefinitions Condition="$(EnableXeSSFrameGeneration) And '$(Platform)' == 'x64'">MP_ENABLE_XESS_FRAME_GENERATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	  <AdditionalIncludeDirectories Condition="$(EnableXeSSFrameGeneration) And '$(Platform)' == 'x64'">$(XeSSSdkDir)\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">MP_ENABLE_RTX_VIDEO_DENOISE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">$(VFXSdkDir)\nvvfx\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat Condition="'$(DisablePDB)' == 'true'">None</DebugInformationFormat>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(ReproducibleBuild)' == 'true'">/Brepro %(AdditionalOptions)</AdditionalOptions>
       <!-- -fstrict-vtable-pointers: 缓存虚表指针，这要求不能通过非法手段改变对象的动态类型 -->
       <!-- -funsafe-math-optimizations: 以降低精度为代价提高浮点运算速度 -->
       <!-- -fno-math-errno: 浮点操作不设置 errno，这使一些数学函数可以内联 -->
@@ -50,7 +53,11 @@
     </ResourceCompile>
     <Link>
       <GenerateDebugInformation Condition="'$(DisablePDB)' == 'true'">false</GenerateDebugInformation>
+      <AdditionalOptions Condition="'$(ReproducibleBuild)' == 'true'">/Brepro %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <Lib>
+      <AdditionalOptions Condition="'$(ReproducibleBuild)' == 'true'">/Brepro %(AdditionalOptions)</AdditionalOptions>
+    </Lib>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">

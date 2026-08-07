@@ -93,6 +93,8 @@ private:
 	bool _PublishBackendTexture(ID3D11Texture2D* texture, bool synchronous) noexcept;
 
 	bool _InitializeDLSSFrameGenerator(ID3D11Texture2D* input, uint32_t multiplier) noexcept;
+	void _HandleDLSSFrameGenerationFailure(ID3D11Texture2D* input) noexcept;
+	void _DisableDLSSFrameGenerationForSession() noexcept;
 
 	bool _UpdateDynamicConstants() const noexcept;
 
@@ -127,13 +129,10 @@ private:
 	Magpie::BackendDescriptorStore _backendDescriptorStore;
 	std::unique_ptr<FrameSourceBase> _frameSource;
 	std::vector<EffectDrawer> _effectDrawers;
-	std::vector<std::unique_ptr<class DLSSZeroMVUpscaler>> _dlssZeroMVUpscalers;
-	std::vector<std::unique_ptr<class FSR2ZeroMVUpscaler>> _fsr2ZeroMVUpscalers;
-	std::vector<std::unique_ptr<class FSR3ZeroMVUpscaler>> _fsr3ZeroMVUpscalers;
-	std::vector<std::unique_ptr<class XeSSZeroMVUpscaler>> _xessZeroMVUpscalers;
-	std::vector<std::unique_ptr<class RTXVideoDenoiser>> _rtxVideoDenoisers;
+	std::vector<std::unique_ptr<class NativeEffectBackend>> _nativeEffectBackends;
 	std::unique_ptr<class DLSSFrameGenerator> _dlssFrameGenerator;
-	winrt::com_ptr<ID3D11Texture2D> _dlssFrameGenerationOutput;
+	uint32_t _dlssFgConsecutiveFailures = 0;
+	uint32_t _dlssFgRecoveryAttempts = 0;
 
 	StepTimer _stepTimer;
 	EffectsProfiler _effectsProfiler;

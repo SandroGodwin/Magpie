@@ -1,135 +1,46 @@
-# Magpie 实验增强交接
+# Magpie 实验分支交接
 
-更新日期：2026-07-15
-面向：Magpie 项目 owner / maintainer
+更新：2026-08-07
 
-## 项目概况
+这是 [Blinue/Magpie](https://github.com/Blinue/Magpie) 的非官方实验 Fork。主要新增了仅依赖捕获颜色帧的 DLSS-SR、DLSS Frame Generation、FSR2/3/4、XeSS、RTX Video，以及 MLAA/SMAA 时域近似效果。由于没有引擎提供的真实深度、运动向量、曝光、反应遮罩和投影 jitter，画质和稳定性不能等同于原生游戏接入。
 
-本分支为 Magpie 增加了四组可选实验后端：
+## 当前实现
 
-- NVIDIA DLSS-SR：Zero-MV、伪 jitter、颜色光流。
-- AMD FSR 2.2.1：Zero-MV、颜色光流。
-- NVIDIA RTX Video：同分辨率降噪和实际 VSR 放大。
-- Intel XeSS 3.0.1：通过 D3D11/D3D12 共享资源运行通用 D3D12 DP4a Zero-MV 路径。
+- DLSS/FSR2/FSR3/FSR4/XeSS：Zero-MV、伪 jitter、50% 颜色光流等实验路径。
+- RTX Video：同分辨率降噪和 VSR Low/Medium/High/Ultra。
+- DLSSFG：2x/3x/4x 参数，虚拟零深度/运动向量；不能与 Smooth Motion 同时使用。
+- XeSSFG：通用显卡 x2，以及 Intel Arc 显卡 x2-x4 多帧生成；请求倍率会受 GPU/驱动报告能力限制。
+- Smooth Motion 兼容模式：缩放结束后重启 Magpie，保留窗口/最小化/托盘状态；新进程会等待旧进程完全退出。
+- 原生 SDK Effect 已统一通过 `NativeEffectBackend` 和 `NativeEffectBackendFactory` 分派；DLSSFG 因多帧发布仍是独立终端阶段。
 
-所有新增功能均通过构建开关控制，默认关闭。
+DLSSFG 当前保留 CPU Fence。失败时依次重置历史、重建一次；仍失败则只在当前缩放会话禁用帧生成并继续显示真实帧，避免无限重试把窗口拖死。
 
-## 目录说明
+内置更新检查在 0.5.2-experimental 中暂时关闭，应用不会后台联网检查，也不显示手动检查入口。
 
-- `source`：主项目源码，后续开发和构建均以此为准。
-- `release\Magpie-Experimental-x64`：持续覆盖更新的便携分发目录。
-- `release\Magpie-Experimental-x64.zip`：持续覆盖更新的同名测试包。
-- `dependencies`：集中保存 DLSS、FSR2、XeSS、NVIDIA VFX SDK/运行库及 OptiScaler 参考项目，不属于 Magpie 主源码。
+## 关键位置
 
-外部 SDK 无需整体复制进分发包，但分发目录中的 DLSS、FSR2、RTX Video、CUDA/TensorRT 及 WinUI DLL 是运行依赖，不能仅因其来自 SDK 而删除。公开发布这些二进制前仍需核对各自许可证。
+- 原生后端：`src/Magpie.Core/*Upscaler.*`、`RTXVideoDenoiser.*`、`DLSSFrameGenerator.*`
+- 统一分派：`src/Magpie.Core/NativeEffectBackend*`
+- Renderer 接入：`src/Magpie.Core/Renderer.*`
+- Effect：`src/Effects/DLSS*`、`FSR*`、`XeSS`、`RTXVideo`、`DLSSFG`、`XeSSFG`
+- 本机开关：`src/BuildOptions.props.user`（不可提交）
+- 可复现打包：`scripts/Build-Release.ps1`
+- 许可证清单：`docs/THIRD_PARTY_AND_REDISTRIBUTION.md`
 
-## 当前状态
+## 构建与输出
 
-已确认：
-
-- Release x64 完整构建成功。
-- DLSS、FSR2 和 RTX Video 均已接入 Magpie 的 Effect 管线。
-- RTX Video 使用 D3D11/CUDA GPU 互操作，无 CPU 帧回读。
-- RTX Video 降噪及 VSR 放大已在 RTX 5070 Ti 上成功加载和运行。
-- XeSS 已完成 Release x64 编译；NVIDIA/AMD/Intel 实机兼容性和画质仍待测试。
-
-主要限制：
-
-- Magpie 只能取得最终颜色帧，没有游戏引擎的真实深度、运动向量和投影 jitter。
-- DLSS/FSR2 Zero-MV 在动态画面中可能产生拖影或历史粘连。
-- 当前 50% 分辨率颜色光流仍是研究实现，主观效果可能比 Zero-MV 更差。
-- 伪 jitter 只提交元数据，不能生成真正的新亚像素信息。
-- RTX Video 同分辨率降噪对干净画面变化较轻；Ultra 首次加载可能需要数分钟。
-
-## Effect 清单
-
-DLSS：
-
-- `DLSS\DLSS_ZeroMV`
-- `DLSS\DLSS_ZeroMV_Jitter`
-- `DLSS\DLSS_OpticalFlow`
-
-FSR2：
-
-- `FSR2\FSR2_ZeroMV`
-- `FSR2\FSR2_OpticalFlow`
-
-FSR3（仅上采样，不含帧生成）：
-
-- `FSR3\FSR3_ZeroMV`
-- `FSR3\FSR3_OpticalFlow`
-
-XeSS：
-
-- `XeSS\XeSS_ZeroMV`
-- `XeSS\XeSS_OpticalFlow`
-
-RTX Video：
-
-- `RTXVideo\RTXVideo_Denoise_Low/Medium/High/Ultra`
-- `RTXVideo\RTXVideo_VSR_Low/Medium/High/Ultra`
-
-VSR 效果建议使用 `Fit` 缩放类型。Denoise 保持输入尺寸不变。
-
-## 关键代码
-
-原生后端：
-
-- `src/Magpie.Core/DLSSZeroMVUpscaler.*`
-- `src/Magpie.Core/FSR2ZeroMVUpscaler.*`
-- `src/Magpie.Core/XeSSZeroMVUpscaler.*`
-- `src/Magpie.Core/HalfResOpticalFlow.*`
-- `src/Magpie.Core/RTXVideoDenoiser.*`
-
-接入与工程配置：
-
-- `src/Magpie.Core/Renderer.*`
-- `src/BuildOptions.props`
-- `src/Common.Post.props`
-- `src/Magpie.Core/Magpie.Core.vcxproj`
-- `src/Magpie/Magpie.vcxproj`
-- `src/Effects/Effects.vcxproj`
-
-Effect 文件位于 `src/Effects/DLSS`、`FSR2`、`XeSS` 和 `RTXVideo`。
-
-`RTXVideoDenoiser` 目前同时负责降噪和放大，合并前建议重命名。Renderer 现在按 Effect 名称分派原生后端，长期建议改成显式元数据。
-
-## 构建
-
-已验证环境：Visual Studio 2022、Windows SDK 10.0.26100、Python 3.11、Conan 2.30。
-
-在 Visual Studio 2022 Developer PowerShell 中进入仓库根目录并执行：
+开发环境使用 VS 2022、Windows SDK 10.0.26100、Conan 2。打包命令：
 
 ```powershell
-msbuild Magpie.slnx /m /nr:false /v:minimal /p:Configuration=Release /p:Platform=x64
+./scripts/Build-Release.ps1 -Version 0.0.0-experimental
 ```
 
-本机 SDK 路径应写在 `src/BuildOptions.props.user`。该文件不应提交公共仓库，应改为示例配置或 CI 参数。
+脚本自动发现 MSBuild/Conan/CMake，使用 Conan 锁文件和 `/Brepro` 执行 Rebuild，覆盖 `release/Magpie-Experimental-x64` 和同名 ZIP，并生成含提交、源码状态、功能开关及文件哈希的 `build-manifest.json`。正式包默认拒绝脏工作区；本地临时测试才使用 `-AllowDirtySource`。
 
-保留的外部依赖统一位于工作区的 `dependencies` 目录。
+## 维护注意
 
-## 开源注意事项
-
-Magpie 使用 GPLv3。建议先在官方仓库的个人 Fork 中建立实验分支，只公开源码、构建开关和依赖获取说明。
-
-当前 NVIDIA VFX wheel 标记为专有许可证。未完成再分发条款及 GPL 兼容性审查前，不建议把现有便携 ZIP 上传 GitHub Release，也不要提交 SDK、模型、wheel 或 DLL。
-
-同样不要提交 `BuildOptions.props.user`、`bin/`、`obj/`、`packages/`、日志和缓存。
-
-## 建议下一步
-
-1. 将 DLSS、FSR2、RTX Video 拆成独立提交，方便审查和回退。
-2. 优先整理原生后端接口和 Effect 元数据，再考虑合入上游。
-3. 为 RTX Video 增加运行库检测和首次加载提示。
-4. 光流继续开发前，先验证 MV 的方向、单位和缩放约定。
-5. 发布二进制前单独完成 NVIDIA 相关许可证审查。
-
-## 输出
-
-- 源码：`source`
-- Release 输出：`bin/x64/Release/Magpie.exe`
-- 本地实验分发包：`release\Magpie-Experimental-x64.zip`
-- 自动构建及更新：`source\scripts\Build-Release.ps1`
-- 工作区快捷入口：`Update-Release.ps1`
-
-本仓库由 Magpie 官方仓库 Fork，实验修改保存在独立分支，以保留清晰的上游提交历史。
+- DLSSFG 不要直接跳过 CPU Fence；此前会造成 D3D12 allocator/list 提前复用、NGX Evaluate 失败及整体卡死。
+- 光流是假运动输入，不是引擎 MV；目前所有 Optical Flow 路径都不推荐日常使用。
+- 伪 jitter 只有 DLSS 的主观结果尚可，其余后端的 jitter 结果不推荐。
+- FSR4 会绕过 INT8 provider 的能力检查，只适合研究；二进制发布前必须单独检查授权。
+- GPLv3 与 NVIDIA 专有组件的组合分发存在未解决风险。SDK、模型、wheel 和本机依赖目录不要提交；公开二进制前按许可证专项文档逐项审核。

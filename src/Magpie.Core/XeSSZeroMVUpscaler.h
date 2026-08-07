@@ -1,4 +1,5 @@
 #pragma once
+#include "NativeEffectBackend.h"
 
 namespace Magpie {
 
@@ -6,14 +7,14 @@ class DeviceResources;
 
 // Experimental colour-only XeSS-SR adapter. Magpie renders with D3D11, while
 // the cross-vendor XeSS path is D3D12, so resources are shared between APIs.
-class XeSSZeroMVUpscaler {
+class XeSSZeroMVUpscaler final : public NativeEffectBackend {
 public:
 	struct Impl;
 
 	XeSSZeroMVUpscaler();
 	XeSSZeroMVUpscaler(const XeSSZeroMVUpscaler&) = delete;
 	XeSSZeroMVUpscaler& operator=(const XeSSZeroMVUpscaler&) = delete;
-	~XeSSZeroMVUpscaler();
+	~XeSSZeroMVUpscaler() override;
 
 	bool Initialize(
 		DeviceResources& deviceResources,
@@ -27,9 +28,9 @@ public:
 		DeviceResources& deviceResources,
 		ID3D11Texture2D* input,
 		ID3D11Texture2D* output
-	) noexcept;
+	) noexcept override;
 
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept;
+	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
 
 private:
 	std::unique_ptr<Impl> _impl;

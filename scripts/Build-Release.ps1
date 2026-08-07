@@ -1,30 +1,152 @@
 param(
     [string]$PackageName = "Magpie-Experimental-x64",
+    [string]$Configuration = "Release",
+    [string]$Platform = "x64",
+    [string]$Version,
+    [switch]$AllowDirtySource,
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $workspaceRoot = Split-Path $sourceRoot -Parent
 $releaseRoot = [System.IO.Path]::GetFullPath((Join-Path $workspaceRoot "release"))
 $stagingDir = [System.IO.Path]::GetFullPath((Join-Path $releaseRoot $PackageName))
 $zipPath = [System.IO.Path]::GetFullPath((Join-Path $releaseRoot "$PackageName.zip"))
-$buildOutput = Join-Path $sourceRoot "bin\x64\Release"
+$buildOutput = Join-Path $sourceRoot "bin\$Platform\$Configuration"
 
 if (!$stagingDir.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
     !$zipPath.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Release path escaped the release directory."
 }
 
+function Find-MSBuild {
+    $command = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+
+    $vswhereCandidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"),
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio\Installer\vswhere.exe")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+    foreach ($vswhere in $vswhereCandidates) {
+        $result = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild `
+            -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+        if ($result -and (Test-Path -LiteralPath $result)) { return $result }
+    }
+    throw "MSBuild was not found. Install the Visual Studio C++ build tools."
+}
+
+function Add-ConanToPath {
+    if (Get-Command conan.exe -ErrorAction SilentlyContinue) { return }
+
+    $roots = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Python"),
+        (Join-Path $env:APPDATA "Python")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+    foreach ($root in $roots) {
+        $conan = Get-ChildItem -LiteralPath $root -Filter conan.exe -File -Recurse `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($conan) {
+            $env:Path = "$($conan.DirectoryName);$env:Path"
+            return
+        }
+    }
+    throw "Conan was not found. Install Conan 2 and make conan.exe available on PATH."
+}
+
+function Add-CMakeToPath {
+    if (Get-Command cmake.exe -ErrorAction SilentlyContinue) { return }
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path -LiteralPath $vswhere) {
+        $installations = & $vswhere -products * -property installationPath
+        foreach ($installation in $installations) {
+            $cmakeDir = Join-Path $installation "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+            if (Test-Path -LiteralPath (Join-Path $cmakeDir "cmake.exe")) {
+                $env:Path = "$cmakeDir;$env:Path"
+                return
+            }
+        }
+    }
+    throw "CMake was not found. Install the Visual Studio CMake component or add cmake.exe to PATH."
+}
+
+function Find-Git {
+    $command = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+
+    $candidates = @((Join-Path $env:ProgramFiles "Git\cmd\git.exe"))
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path -LiteralPath $vswhere) {
+        foreach ($installation in (& $vswhere -products * -property installationPath)) {
+            $candidates += Join-Path $installation `
+                "Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd\git.exe"
+        }
+    }
+    return $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+}
+
+$gitPath = Find-Git
+function Invoke-Git([string[]]$Arguments) {
+    if (!$gitPath) { return $null }
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $value = & $gitPath -c "safe.directory=$sourceRoot" -C $sourceRoot @Arguments 2>$null
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    if ($exitCode -ne 0) { return $null }
+    return ($value | Out-String).Trim()
+}
+
+$commit = Invoke-Git @("rev-parse", "HEAD")
+$shortCommit = Invoke-Git @("rev-parse", "--short=12", "HEAD")
+$commitTimeText = Invoke-Git @("show", "-s", "--format=%cI", "HEAD")
+$exactTag = Invoke-Git @("describe", "--tags", "--exact-match", "HEAD")
+$sourceDirty = [bool](Invoke-Git @("status", "--porcelain=v1", "--untracked-files=all"))
+if ($sourceDirty -and !$AllowDirtySource) {
+    throw "The source tree has uncommitted changes. Commit them first, or use -AllowDirtySource for a local test package."
+}
+
+if (!$Version) {
+    if ($exactTag) {
+        $Version = $exactTag -replace '^v', ''
+    } elseif ($shortCommit) {
+        $Version = "0.0.0-dev+$shortCommit"
+    } else {
+        $Version = "0.0.0-dev"
+    }
+}
+
+$versionMatch = [regex]::Match($Version, '^(?:v)?(\d+)\.(\d+)\.(\d+)')
+if (!$versionMatch.Success) {
+    throw "Version must begin with major.minor.patch: $Version"
+}
+
 if (!$SkipBuild) {
-    $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
-    $python = "C:\Users\81443\AppData\Local\Programs\Python\Python311"
-    $env:Path = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;$python\Scripts;$python;" + $env:Path
+    $msbuild = Find-MSBuild
+    Add-ConanToPath
+    Add-CMakeToPath
+
+    $msbuildArgs = @(
+        "Magpie.slnx", "/m", "/nr:false", "/v:minimal", "/t:Rebuild",
+        "/p:Configuration=$Configuration", "/p:Platform=$Platform",
+        "/p:MajorVersion=$($versionMatch.Groups[1].Value)",
+        "/p:MinorVersion=$($versionMatch.Groups[2].Value)",
+        "/p:PatchVersion=$($versionMatch.Groups[3].Value)",
+        "/p:VersionString=$Version", "/p:CommitId=$shortCommit",
+        "/p:DisablePDB=true", "/p:ReproducibleBuild=true"
+    )
 
     Push-Location $sourceRoot
     try {
-        & $msbuild "Magpie.slnx" /m /nr:false /v:minimal /p:Configuration=Release /p:Platform=x64
+        & $msbuild @msbuildArgs
         if ($LASTEXITCODE -ne 0) {
             throw "Release build failed with exit code $LASTEXITCODE."
         }
@@ -37,39 +159,146 @@ if (!(Test-Path -LiteralPath (Join-Path $buildOutput "Magpie.exe"))) {
     throw "Release build output was not found: $buildOutput"
 }
 
-if (Get-Process -Name "Magpie" -ErrorAction SilentlyContinue) {
-    throw "Close all running Magpie instances before updating the release directory."
+$running = Get-Process -Name "Magpie" -ErrorAction SilentlyContinue
+if ($running) {
+    try {
+        $running | Stop-Process -Force -ErrorAction Stop
+    } catch {
+        $processIds = ($running.Id | ForEach-Object { [string][int]$_ }) -join ','
+        $command = "Stop-Process -Id $processIds -Force"
+        $elevated = Start-Process -FilePath "powershell.exe" -Verb RunAs -WindowStyle Hidden `
+            -ArgumentList @("-NoProfile", "-Command", $command) -Wait -PassThru
+        if ($elevated.ExitCode -ne 0) {
+            throw "Elevated Magpie shutdown failed with exit code $($elevated.ExitCode)."
+        }
+    }
+    Start-Sleep -Milliseconds 250
+    if (Get-Process -Name "Magpie" -ErrorAction SilentlyContinue) {
+        throw "Magpie is still running after the shutdown attempt."
+    }
 }
 
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 if (Test-Path -LiteralPath $stagingDir) {
-    Remove-Item -LiteralPath $stagingDir -Recurse -Force
+    # Keep the staging root itself. Explorer, antivirus and recently exited
+    # GUI processes can briefly retain a handle to the directory even after
+    # every packaged file is released.
+    Get-ChildItem -LiteralPath $stagingDir -Force |
+        Remove-Item -Recurse -Force
+} else {
+    New-Item -ItemType Directory -Path $stagingDir | Out-Null
 }
-New-Item -ItemType Directory -Path $stagingDir | Out-Null
 
 Get-ChildItem -LiteralPath $buildOutput | Where-Object {
     $_.Extension -notin ".pdb", ".lib", ".exp"
 } | Copy-Item -Destination $stagingDir -Recurse
 
-Copy-Item -LiteralPath (Join-Path $sourceRoot "LICENSE") -Destination (Join-Path $stagingDir "LICENSE-Magpie.txt")
-Copy-Item -LiteralPath (Join-Path $sourceRoot "docs\README-EXPERIMENTAL-RELEASE.txt") -Destination (Join-Path $stagingDir "README-Experimental.txt")
+# Never package per-user runtime state left in bin/ by local test launches.
+foreach ($runtimeStateName in @("cache", "logs")) {
+    $runtimeStatePath = Join-Path $stagingDir $runtimeStateName
+    if (Test-Path -LiteralPath $runtimeStatePath) {
+        Remove-Item -LiteralPath $runtimeStatePath -Recurse -Force
+    }
+}
+
+Copy-Item -LiteralPath (Join-Path $sourceRoot "LICENSE") `
+    -Destination (Join-Path $stagingDir "LICENSE-Magpie.txt")
+Copy-Item -LiteralPath (Join-Path $sourceRoot "docs\README-EXPERIMENTAL-RELEASE.txt") `
+    -Destination (Join-Path $stagingDir "README-Experimental.txt")
+Copy-Item -LiteralPath (Join-Path $sourceRoot "docs\THIRD_PARTY_AND_REDISTRIBUTION.md") `
+    -Destination (Join-Path $stagingDir "THIRD-PARTY-NOTICES.md")
+
+$featureOptions = [ordered]@{}
+$userOptionsPath = Join-Path $sourceRoot "src\BuildOptions.props.user"
+if (Test-Path -LiteralPath $userOptionsPath) {
+    [xml]$userOptions = Get-Content -LiteralPath $userOptionsPath
+    $properties = $userOptions.Project.PropertyGroup.ChildNodes | Where-Object {
+        $_.Name -like "Enable*"
+    }
+    foreach ($property in $properties) {
+        $featureOptions[$property.Name] = [string]$property.InnerText
+    }
+}
+
+$fileRecords = Get-ChildItem -LiteralPath $stagingDir -File -Recurse | Sort-Object FullName | ForEach-Object {
+    $relativePath = $_.FullName.Substring($stagingDir.Length).TrimStart('\', '/')
+    [ordered]@{
+        path = $relativePath.Replace('\', '/')
+        bytes = $_.Length
+        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        fileVersion = $_.VersionInfo.FileVersion
+        productVersion = $_.VersionInfo.ProductVersion
+    }
+}
+
+$sourceDate = if ($commitTimeText) {
+    [DateTimeOffset]::Parse($commitTimeText).UtcDateTime
+} else {
+    [DateTime]::SpecifyKind([DateTime]"1970-01-01", [DateTimeKind]::Utc)
+}
+$manifest = [ordered]@{
+    schemaVersion = 1
+    package = $PackageName
+    version = $Version
+    commit = $commit
+    sourceDirty = $sourceDirty
+    sourceDateUtc = $sourceDate.ToString("o")
+    configuration = $Configuration
+    platform = $Platform
+    featureOptions = $featureOptions
+    files = @($fileRecords)
+}
+$manifest | ConvertTo-Json -Depth 8 | Set-Content `
+    -LiteralPath (Join-Path $stagingDir "build-manifest.json") -Encoding utf8
+
+# Normalize staging timestamps to the source commit time. Combined with the
+# manifest this makes repeated packages comparable and avoids local wall-clock
+# metadata in the archive.
+Get-ChildItem -LiteralPath $stagingDir -Recurse -Force | ForEach-Object {
+    $_.LastWriteTimeUtc = $sourceDate
+}
+# The staging root can remain briefly open in Explorer or by a recently exited
+# GUI process. ZIP entries are created from its children, so the root timestamp
+# does not affect archive reproducibility.
+try {
+    (Get-Item -LiteralPath $stagingDir).LastWriteTimeUtc = $sourceDate
+} catch [System.IO.IOException] {
+    Write-Warning "Could not normalize the staging root timestamp: $($_.Exception.Message)"
+}
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
-Push-Location $releaseRoot
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::Open(
+    $zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
 try {
-    & tar.exe -a -c -f $zipPath $PackageName
-    if ($LASTEXITCODE -ne 0) {
-        throw "ZIP creation failed with exit code $LASTEXITCODE."
+    Get-ChildItem -LiteralPath $stagingDir -File -Recurse | Sort-Object FullName | ForEach-Object {
+        $relativePath = $_.FullName.Substring($stagingDir.Length).TrimStart('\', '/').Replace('\', '/')
+        $entryName = "$PackageName/$relativePath"
+        $entry = $archive.CreateEntry(
+            $entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+        $entry.LastWriteTime = [DateTimeOffset]$sourceDate
+
+        $inputStream = [System.IO.File]::OpenRead($_.FullName)
+        $outputStream = $entry.Open()
+        try {
+            $inputStream.CopyTo($outputStream)
+        } finally {
+            $outputStream.Dispose()
+            $inputStream.Dispose()
+        }
     }
 } finally {
-    Pop-Location
+    $archive.Dispose()
 }
 
 $zip = Get-Item -LiteralPath $zipPath
 $hash = Get-FileHash -LiteralPath $zipPath -Algorithm SHA256
+Write-Host "Version:           $Version"
+Write-Host "Commit:            $commit"
 Write-Host "Release directory: $stagingDir"
 Write-Host "Release ZIP:       $zipPath"
 Write-Host "ZIP bytes:         $($zip.Length)"

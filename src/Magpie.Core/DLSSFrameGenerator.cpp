@@ -187,7 +187,6 @@ DLSSFrameGenerator::~DLSSFrameGenerator() = default;
 bool DLSSFrameGenerator::Initialize(
 	DeviceResources& resources,
 	ID3D11Texture2D* input,
-	ID3D11Texture2D* output,
 	uint32_t multiplier
 ) noexcept {
 	_requestedMultiplier = std::clamp(multiplier, 2u, 4u);
@@ -197,14 +196,7 @@ bool DLSSFrameGenerator::Initialize(
 	impl->context11 = resources.GetD3DDC();
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
-	D3D11_TEXTURE2D_DESC outputDesc{};
 	input->GetDesc(&inputDesc);
-	output->GetDesc(&outputDesc);
-	if (inputDesc.Width != outputDesc.Width || inputDesc.Height != outputDesc.Height ||
-		inputDesc.Format != outputDesc.Format) {
-		Logger::Get().Error("DLSSFG must be a same-resolution terminal effect");
-		return false;
-	}
 	impl->width = inputDesc.Width;
 	impl->height = inputDesc.Height;
 
@@ -235,7 +227,7 @@ bool DLSSFrameGenerator::Initialize(
 
 	if (!CreateSharedTexture(*impl, inputDesc, false,
 		impl->sharedInput11, impl->sharedInput12) ||
-		!CreateSharedTexture(*impl, outputDesc, true,
+		!CreateSharedTexture(*impl, inputDesc, true,
 			impl->sharedGenerated11, impl->sharedGenerated12)) {
 		return false;
 	}
@@ -378,10 +370,9 @@ bool DLSSFrameGenerator::Initialize(
 
 bool DLSSFrameGenerator::Resize(
 	DeviceResources& resources,
-	ID3D11Texture2D* input,
-	ID3D11Texture2D* output
+	ID3D11Texture2D* input
 ) noexcept {
-	return Initialize(resources, input, output, _requestedMultiplier);
+	return Initialize(resources, input, _requestedMultiplier);
 }
 
 uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
@@ -390,10 +381,8 @@ uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
 
 bool DLSSFrameGenerator::Draw(
 	ID3D11Texture2D* input,
-	ID3D11Texture2D* output,
 	const PublishCallback& publishGeneratedFrame
 ) noexcept {
-	(void)output;
 	if (!_impl || !_impl->feature || !_impl->parameters) {
 		return false;
 	}
@@ -503,6 +492,12 @@ bool DLSSFrameGenerator::Draw(
 	return true;
 }
 
+void DLSSFrameGenerator::RequestHistoryReset() noexcept {
+	if (_impl) {
+		_impl->resetHistory = true;
+	}
+}
+
 }
 
 #else
@@ -513,18 +508,19 @@ struct DLSSFrameGenerator::Impl {};
 DLSSFrameGenerator::DLSSFrameGenerator() = default;
 DLSSFrameGenerator::~DLSSFrameGenerator() = default;
 bool DLSSFrameGenerator::Initialize(
-	DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, uint32_t) noexcept {
+	DeviceResources&, ID3D11Texture2D*, uint32_t) noexcept {
 	Logger::Get().Error("DLSS Frame Generation is disabled at build time");
 	return false;
 }
 bool DLSSFrameGenerator::Resize(
-	DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
+	DeviceResources&, ID3D11Texture2D*) noexcept {
 	return false;
 }
 bool DLSSFrameGenerator::Draw(
-	ID3D11Texture2D*, ID3D11Texture2D*, const PublishCallback&) noexcept {
+	ID3D11Texture2D*, const PublishCallback&) noexcept {
 	return false;
 }
+void DLSSFrameGenerator::RequestHistoryReset() noexcept {}
 uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
 	return _requestedMultiplier;
 }
