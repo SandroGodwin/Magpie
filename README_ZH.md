@@ -21,10 +21,11 @@ Magpie 是一个轻量级的窗口超分辨率工具，内置众多高效的算�
 
 本仓库是 [Blinue/Magpie](https://github.com/Blinue/Magpie) 的非官方实验性 Fork。Magpie 及本代码库的大部分内容由 Blinue 和上游贡献者创作。本 Fork 不代表 Magpie 官方，也不由上游项目提供支持。
 
-Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终颜色帧的实验功能：
+Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下基于捕获帧的实验功能：
 
-- NVIDIA DLSS Super Resolution：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
-- NVIDIA DLSS Frame Generation：可配置 x2/x3/x4 输出，使用虚拟时域输入。
+- NVIDIA DLSS Super Resolution：复用 NVIDIA Optical Flow 运动信息，并可选使用估算深度。
+- NVIDIA DLSS Frame Generation：可配置 x2/x3/x4 输出，并复用同一份 Frame Guidance。
+- NVIDIA DLSSNR：通过本地提供的直接运行时实现同分辨率 SDR AI 滤镜。
 - AMD FidelityFX Super Resolution 2.2.1：零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流。
 - AMD FidelityFX Super Resolution 3.1.5 上采样（不含帧生成）：通过 D3D11/D3D12 互操作提供零运动向量、伪 jitter 元数据或 50% 分辨率颜色光流模式。
 - AMD FidelityFX Super Resolution 4.1.1 INT8：提供 Zero-MV、伪 jitter 和 50% 分辨率颜色光流实验模式。
@@ -33,25 +34,25 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 - NVIDIA VideoSuperRes：同分辨率降噪和 VSR 放大。
 - MLAA，以及基于捕获颜色帧近似实现的 SMAA T2x/4x（含 jitter 与无 jitter 版本）。
 
-这些接入无法获得游戏引擎提供的真实深度、运动向量、曝光、反应遮罩和投影 jitter，因此可能出现拖影、细节不稳定，效果也可能弱于游戏原生接入。它们属于研究原型，不能视为原生 DLSS 或 FSR 的替代品。
+这些接入无法获得游戏引擎提供的深度、运动向量、曝光、反应遮罩、相机矩阵和投影 jitter。Renderer 使用的光流与 Depth Anything V2 深度均由捕获颜色估算，因此仍可能出现拖影和细节不稳定，不能视为游戏原生 DLSS 或 FSR 的替代品。
 
 ### 初步测试观察
 
 以下结论来自有限设备和游戏中的主观对比，不代表普遍性能或画质结论。
 
-日常使用建议在 `DLSS_ZeroMV`、`DLSS_ZeroMV_Jitter` 和 `RTXVideo_VSR_Ultra` 中三选一，不建议叠加。VSR Ultra 性能不足时可退到 VSR High。非 NVIDIA 显卡也可以考虑 FSR2 Zero-MV；当前 FSR3、XeSS 和所有 Optical Flow 版本则主要保留作研究和对照。
+日常使用建议在 `DLSS SR_Experimental` 与 `RTXVideo_VSR_Ultra` 中选择一个，不建议叠加。DLSS SR 默认开启运动信息、关闭估算深度；伪 Jitter 和旧 Optical Flow 名称仅保留为兼容实验。
 
 #### DLSS Super Resolution
 
-当前实现提供 Zero-MV、伪 jitter 和 50% 分辨率颜色光流三种实验路径。在部分较老或原生抗锯齿较弱的 3D 游戏中，DLSS 对边缘平滑和画面稳定性有明显改善；测试中较适合的场景包括 Frostpunk、戴森球计划、Minecraft，以及安卓模拟器中的 3D 游戏。部分场景下的主观效果优于 FSR1。
+`DLSS SR_Experimental` 为兼容旧配置继续使用内部标识 `DLSS_ZeroMV`，但提供两个独立输入。`Use Motion Vectors` 默认开启，输入当前帧到上一帧、以源像素为单位的光流；`Use Estimated Depth` 默认关闭，输入归一化逆相对深度。即使不向 DLSS 传递运动信息，估算深度仍可在内部使用光流做时域稳定。只有 DLSS 输入尺寸与捕获源一致时才绑定真实 Guidance，否则安全回退 Zero。
 
 | Effect | 实测优点 | 实测缺点 | 推荐结论 |
 | --- | --- | --- | --- |
-| `DLSS_ZeroMV` | 在合适的游戏中，抗锯齿和边缘平滑改善明显，额外开销相对较低，也不会引入 Jitter 模式的偶发抖动 | 动态画面可能保留错误历史并产生拖影 | 推荐，作为 DLSS 的默认首选 |
-| `DLSS_ZeroMV_Jitter` | 部分测试中的拖影似乎比 Zero-MV 更少，可能是最近帧获得了更高影响力 | 偶尔出现可见抖动；源游戏投影并未真正 jitter，因此原因仍只是推测 | 推荐，与DLSS_ZeroMV为3d游戏二选一 |
-| `DLSS_OpticalFlow` | 尝试用颜色运动估计对齐动态历史 | 估算光流不等于引擎运动向量；实测画质较差，额外开销不值得 | 不推荐 |
+| `DLSS SR_Experimental` | 复用 Renderer 级 Motion/Depth，并能按通道安全回退 | 估算输入不等于引擎数据，仍可能拖影 | 当前非 Jitter 测试主路径 |
+| `DLSS_ZeroMV_Jitter` | 保留原有元数据实验 | 游戏投影没有真正 jitter，输入并不自洽 | 旧版兼容，不接入新 Guidance |
+| `DLSS_OpticalFlow` | 兼容旧配置，并改为请求共享运动 Provider | 不提供估算深度开关，旧名称仅用于兼容 | 旧版兼容 |
 
-由于缺少真实深度和运动向量，动态物体、镜头移动及遮挡变化时仍可能出现拖影和历史粘连。优先在 Zero-MV 与 Jitter 两个 Effect 之间对比：Zero-MV 更稳定，Jitter 可能减少拖影但会偶发抖动。Optical Flow 不推荐。
+运动物体、镜头变化和反遮挡仍可能产生拖影，因为这些输入来自捕获颜色估算。当前开发主线只采用非 Jitter 路径。
 
 <details>
 <summary>补充：驱动层 DLSS 模型/预设覆盖</summary>
@@ -69,15 +70,21 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下仅依赖最终�
 
 </details>
 
+#### DLSSNR AI 滤镜
+
+`DLSSNR_AI_Filter` 是同分辨率 SDR 后处理，不承担放大，并复用 Frame Guidance。Effect 提供 Style、Intensity、Local Tone、Local Structure、Automatic Mask 和 Frame Guidance；NR Preset 固定使用内部默认值。
+
+Feature 18 直接调用本地提供的 `nvngx_dlssnr.dll` 的 D3D12 导出；NGX Core 只负责参数块的分配与销毁。它无法分离已经合成到画面中的 UI，仍可能改变文字/UI，并在动态画面产生拖影或结构漂移。HDR 暂不支持。
+
 #### 帧生成实验
 
-帧生成位于最终呈现阶段，使用虚拟零运动向量、平坦深度、零 jitter 和捕获颜色帧，而不是游戏引擎提供的时域数据。不要将帧生成 Effect 与 NVIDIA Smooth Motion 或另一个帧生成 Effect 同时使用。
+DLSS FG 位于效果链之后，可复用与 DLSS SR 相同捕获帧的运动信息和可选估算深度，同时保持最终颜色为 Backbuffer 分辨率。XeSS FG 本轮仍保持旧 Zero-MV/平坦深度路径。不要将帧生成 Effect 与 NVIDIA Smooth Motion 或另一个帧生成 Effect 同时使用。
 
 启用帧生成时，Magpie 会强制过滤完全相同的捕获帧，并停止通过最低帧率计时器合成重复基础帧。XeSSFG 还会忽略仅由 Magpie 软件光标或叠加层变化触发的前端 Present，避免鼠标移动导致 SDK 输入帧率虚高；光标会随下一张真实捕获帧更新。
 
 | Effect | 硬件与倍率 | 当前状态 |
 | --- | --- | --- |
-| DLSS Frame Generation | NVIDIA RTX；可配置 x2/x3/x4 | 实验功能。失败保护会继续显示真实捕获帧：第一次失败重置历史，随后只重建一次；若仍连续失败，只在当前缩放会话中禁用 DLSSFG。CPU/GPU Fence 同步继续保留。 |
+| `DLSS FG_Experimental` | NVIDIA RTX；可配置 x2/x3/x4 | Motion 默认开启，Estimated Depth 默认关闭；共享 D3D11/D3D12 资源使用同一捕获基础帧 ID。重复失败时保留真实帧，并只在当前缩放会话禁用 DLSSFG。 |
 | XeSS Frame Generation x2 Zero-MV | 兼容的 Intel、NVIDIA 和 AMD GPU；x2 | 使用 XeSS-FG D3D12 代理交换链的通用显卡实验路径。 |
 | XeSS Multi-Frame Generation x2-x4 Zero-MV | Intel Arc；x2/x3/x4 | Arc 多帧生成实验路径。请求倍率会限制在 GPU 和驱动报告的能力范围内；非 Arc 硬件会限制或回退到 x2。 |
 
@@ -146,6 +153,8 @@ XeSS 使用跨厂商 D3D12 DP4a 路径，可以在兼容的 Intel、NVIDIA 和 A
 - [NVIDIA `nvidia-vfx` 软件包](https://pypi.org/project/nvidia-vfx/)
 
 如需编译可选后端，请自行新建 `src/BuildOptions.props.user`，并在其中设置功能开关和本机 SDK 路径。该文件已被 `.gitignore` 排除，只用于本机配置，不应提交到公共仓库。
+
+v0.5.6 实验二进制包使用社区修改的 `nvngx_dlssnr.dll` 310.8.0.0，用于 RTX 40 系和 RTX 50 系测试。该 DLL 仅属于 Release 二进制资产，不包含在本源码树或 GitHub 自动生成的源码归档中。由于文件经过修改，其 Authenticode 文件哈希不再匹配 NVIDIA 原始签名。
 
 原生上采样器和 RTX Video 已统一通过 `NativeEffectBackend` 接口与 `NativeEffectBackendFactory` 分派，将各 SDK 的识别、创建、尺寸调整和绘制逻辑从 Renderer 主路径中移出。帧生成 Presenter 仍保持独立，因为它们需要在最终呈现阶段发布额外帧。
 

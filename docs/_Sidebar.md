@@ -1,4 +1,5 @@
 - [维基主页](https://github.com/Blinue/Magpie/wiki/)
+  - [实验分支文档](experimental/README.md)
   - [FAQ](https://github.com/Blinue/Magpie/wiki/FAQ)
   - [编译指南](https://github.com/Blinue/Magpie/wiki/编译指南)
   - [内置效果介绍](https://github.com/Blinue/Magpie/wiki/内置效果介绍)

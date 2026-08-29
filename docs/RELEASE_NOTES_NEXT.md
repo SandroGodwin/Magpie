@@ -1,13 +1,5 @@
-# Magpie Experimental v0.4.1 — 2026-07-17 / Magpie 实验版 v0.4.1
+# Magpie 下一实验版 / Next Experimental Release
 
-## 中文
+当前公开实验版为 [v0.5.6-experimental](RELEASE_NOTES_v0.5.6-experimental.md)。下一版暂无已确认条目。
 
-### 优化
-
-- 优化 Smooth Motion 兼容模式：自动重启后会保留主窗口原有的显示、最小化或托盘隐藏状态。
-
-## English
-
-### Improved
-
-- Improved Smooth Motion compatibility mode so automatic restarts preserve whether the main window was visible, minimized, or hidden in the system tray.
+The current public experimental release is [v0.5.6-experimental](RELEASE_NOTES_v0.5.6-experimental.md). No changes have been confirmed for the next release yet.

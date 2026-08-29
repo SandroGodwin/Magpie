@@ -24,6 +24,11 @@ This document is an engineering inventory, not legal advice. A component being d
 | FSR 4.1.1 capability-check override | Experimental code in this fork | Source can be reviewed under this repository's license | **Do not publish a binary using the override until AMD terms and permission for this behavior have been reviewed** |
 | Intel XeSS 3.0.1 | Intel Simplified Software License | Do not commit the binary SDK | Redistribution is for unmodified binaries and requires the Intel notice; verify every shipped file |
 | NVIDIA DLSS/NGX and DLSS Frame Generation | NVIDIA RTX SDK license | Do not commit SDK headers, libraries, models, or runtime DLLs | **Unresolved/high risk when combined with GPLv3 Magpie; do not publish such a combined binary without a dedicated review or permission** |
+| NVIDIA DLSSNR experimental runtime | Locally supplied NVIDIA proprietary runtime; the tested file may be official or community-modified, and there is no public DLSSNR SDK contract | Do not commit `nvngx_dlssnr.dll`; configure it as a local build input | **Internal testing only until NVIDIA redistribution permission and GPL compatibility are reviewed** |
+| NVIDIA Optical Flow driver API | NVIDIA driver component plus locally supplied SDK-compatible headers | Do not commit or package `nvofapi64.dll`; load the installed display driver's copy from System32 | The driver DLL is not redistributed by this project; review any header provenance before publishing source |
+| Depth Anything V2 Small ONNX | Apache-2.0 model family; exact converted artifact and upstream notices must be verified | Keep the model in the local `dependencies/` cache and copy it only for explicitly enabled test builds | Do not publish the model until the exact ONNX artifact's license and notice chain have been reviewed |
+| ONNX Runtime DirectML | Microsoft-distributed runtime with MIT and bundled third-party notices | Acquire through the pinned NuGet package; do not commit runtime binaries | Ship only the native files permitted by the package terms and include all supplied notices |
+| ONNX Runtime TensorRT, TensorRT, CUDA and cuDNN | Mixed Microsoft/NVIDIA runtime terms | Keep all runtimes local; generate TensorRT engine caches per machine and never commit them | **Internal testing only until every binary's redistribution terms and GPL compatibility are reviewed** |
 | NVIDIA Video Effects / Maxine runtime and models | NVIDIA proprietary and AI-product terms, plus bundled third-party notices | Do not commit wheel, models, SDK, or runtime binaries | **Unresolved/high risk; review the exact runtime/model terms and GPL compatibility before release** |
 | OptiScaler reference checkout | Reference only; not linked into Magpie | Do not copy its source or binaries without a separate review | Not part of the package |
 | Microsoft/Windows redistributable runtime files | Per Microsoft redistribution terms | Do not vendor development SDKs | Ship only files Microsoft marks redistributable and retain required notices |
@@ -34,7 +39,13 @@ The controlling texts are the exact license files supplied with each SDK/runtime
 - `dependencies/FSR2-DX11-source/.../LICENSE.txt`
 - `dependencies/FSR-SDK-v2.3.0/docs/license.md`
 - `dependencies/XeSS-SDK-3.0.1/LICENSE.txt`
+- `dependencies/DepthAnythingV2/onnx-community-depth-anything-v2-small/LICENSE.Depth-Anything-V2.txt`
+- `dependencies/onnxruntime/*/LICENSE*`
 - `dependencies/nvidia-vfx-python/.../licenses/packaging/`
+
+The community-modified `nvngx_dlssnr.dll` used by the v0.5.6 experimental binary package is a separate Release asset, not project source. It must remain absent from this repository and from GitHub's generated source archives.
+
+v0.5.6 实验二进制包使用的社区修改版 `nvngx_dlssnr.dll` 是独立 Release 资产，不属于项目源码；本仓库及 GitHub 自动生成的源码归档中均不得包含该文件。
 
 各组件最终以对应 SDK/运行库随附的完整许可证原文为准，不能只依据本表摘要作发布决定。
 

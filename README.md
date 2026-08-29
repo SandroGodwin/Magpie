@@ -21,10 +21,11 @@ Magpie is a lightweight window upscaling tool that comes equipped with a variety
 
 This repository is an independent experimental fork of [Blinue/Magpie](https://github.com/Blinue/Magpie). Magpie and the majority of this codebase were created by Blinue and the upstream contributors. This fork is not an official Magpie release and is not endorsed or supported by the upstream project.
 
-The fork owner used OpenAI Codex as a development assistant to add and test experimental colour-frame-only integrations for:
+The fork owner used OpenAI Codex as a development assistant to add and test experimental captured-frame integrations for:
 
-- NVIDIA DLSS Super Resolution with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
-- NVIDIA DLSS Frame Generation with configurable 2x/3x/4x output and virtual temporal inputs.
+- NVIDIA DLSS Super Resolution with shared NVIDIA Optical Flow motion and optional estimated depth.
+- NVIDIA DLSS Frame Generation with configurable 2x/3x/4x output and the same shared guidance.
+- NVIDIA DLSSNR as a same-resolution SDR AI filter through a locally supplied direct-runtime path.
 - AMD FidelityFX Super Resolution 2.2.1 with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
 - AMD FidelityFX Super Resolution 3.1.5 upscaling (without frame generation) through D3D11/D3D12 interoperability, with zero motion vectors, synthetic jitter metadata, or 50%-resolution colour optical flow.
 - AMD FidelityFX Super Resolution 4.1.1 INT8 with experimental Zero-MV, synthetic-jitter, and 50%-resolution colour-optical-flow modes.
@@ -33,25 +34,25 @@ The fork owner used OpenAI Codex as a development assistant to add and test expe
 - NVIDIA VideoSuperRes for same-resolution denoising and VSR upscaling.
 - MLAA and captured-colour-frame approximations of SMAA T2x/4x, with jittered and non-jittered variants.
 
-These integrations do not have access to the real depth, motion vectors, exposure, reactive masks, or projection jitter produced by a game engine. They may therefore produce ghosting, unstable detail, or worse image quality than a native in-game integration. They are research prototypes, not replacements for native DLSS or FSR support.
+These integrations do not have access to engine depth, engine motion vectors, exposure, reactive masks, camera matrices, or projection jitter. Renderer-owned optical flow and Depth Anything V2 are estimates from captured colour, so ghosting and unstable detail remain possible. These are research prototypes, not replacements for native in-game DLSS or FSR support.
 
 ### Initial test observations
 
 The following observations are subjective results from a limited set of systems and games; they are not general performance or image-quality claims.
 
-For normal use, choose one of `DLSS_ZeroMV`, `DLSS_ZeroMV_Jitter`, or `RTXVideo_VSR_Ultra`; stacking them is not recommended. VSR High is the fallback when Ultra is too expensive. FSR2 Zero-MV is also usable on non-NVIDIA hardware, while the current FSR3, XeSS, and all Optical Flow variants are retained primarily for research and comparison.
+For normal use, choose either `DLSS SR_Experimental` or `RTXVideo_VSR_Ultra`; stacking them is not recommended. DLSS SR defaults to motion guidance on and estimated depth off. The synthetic-Jitter and old Optical Flow names remain legacy experiments.
 
 #### DLSS Super Resolution
 
-The current implementation provides three experimental paths: Zero-MV, synthetic jitter metadata, and 50%-resolution colour optical flow. DLSS noticeably improved edge smoothing and image stability in some older 3D games or games with weak native antialiasing. Suitable test cases included Frostpunk, Dyson Sphere Program, Minecraft, and 3D games running in Android emulators. In some scenes, the subjective result was better than FSR1.
+`DLSS SR_Experimental` keeps the compatible internal identifier `DLSS_ZeroMV` but exposes two independent inputs. `Use Motion Vectors` supplies current-to-previous source-pixel optical flow and defaults to on. `Use Estimated Depth` supplies normalized inverse relative depth and defaults to off. Depth can still use optical flow internally for temporal stabilization when motion delivery is disabled. Real guidance is only bound when the DLSS input size matches the captured source; otherwise the channel safely falls back to Zero.
 
 | Effect | Observed advantages | Observed disadvantages | Recommendation |
 | --- | --- | --- | --- |
-| `DLSS_ZeroMV` | Clear antialiasing and edge-smoothing gains in suitable games; relatively low overhead and no occasional jitter from the Jitter path | Motion can retain incorrect history and produce ghosting | Recommended as the default DLSS choice |
-| `DLSS_ZeroMV_Jitter` | Appeared to retain less ghosting than Zero-MV in some tests, possibly because recent frames receive more influence | Occasional visible jitter; the source projection is not truly jittered, so the explanation remains speculative | Recommended; choose between it and `DLSS_ZeroMV` for 3D games |
-| `DLSS_OpticalFlow` | Attempts to align moving history using estimated colour motion | The estimated flow is not engine motion data; image quality was poor and the extra cost was not justified | Not recommended |
+| `DLSS SR_Experimental` | Reuses one Renderer-level motion/depth group and safely falls back per channel | Estimated inputs are not engine data and can still produce ghosting | Current non-Jitter test path |
+| `DLSS_ZeroMV_Jitter` | Retains the earlier metadata-only experiment | The source projection is not jittered, so the metadata is not self-consistent | Legacy; not used by the new guidance path |
+| `DLSS_OpticalFlow` | Compatible alias that now requests the shared motion provider | No estimated-depth control and the old name is retained only for profiles | Legacy |
 
-Without real depth and motion vectors, moving objects, camera motion, and disocclusion can still produce ghosting or history trails. Compare the Zero-MV and Jitter Effects first: Zero-MV is steadier, while Jitter may reduce ghosting at the cost of occasional visible shake. Optical Flow is not recommended.
+Moving objects, camera motion, and disocclusion can still produce ghosting because the inputs are inferred from captured colour. The non-Jitter path is the current development target.
 
 <details>
 <summary>Supplement: driver-level DLSS model/preset overrides</summary>
@@ -69,15 +70,21 @@ Creating a dedicated Magpie application profile in NVIDIA Profile Inspector is r
 
 </details>
 
+#### DLSSNR AI filter
+
+`DLSSNR_AI_Filter` is a same-resolution SDR post-process and does not upscale. It consumes the shared Frame Guidance group. The Effect exposes Style, Intensity, Local Tone, Local Structure, Automatic Mask, and Frame Guidance controls; NR Preset is fixed internally.
+
+Feature 18 uses the direct D3D12 exports of a locally supplied `nvngx_dlssnr.dll`; NGX Core only allocates and destroys the parameter block. The filter cannot separate UI already composited into the captured frame and may alter text/UI or produce ghosting and structural drift. HDR is not currently supported.
+
 #### Frame Generation experiments
 
-Frame Generation runs at the final presentation stage and uses virtual zero motion vectors, flat depth, zero jitter, and captured colour frames rather than engine-provided temporal data. Do not combine a Frame Generation Effect with NVIDIA Smooth Motion or another Frame Generation Effect.
+DLSS FG runs after the effect chain. It can bind the same captured-frame motion and optional estimated depth used by DLSS SR while keeping final colour at backbuffer resolution. XeSS FG remains on its earlier Zero-MV/flat-depth path. Do not combine a Frame Generation Effect with NVIDIA Smooth Motion or another Frame Generation Effect.
 
 While Frame Generation is active, Magpie forces exact duplicate-frame filtering and stops synthesizing repeated base frames through its minimum-FPS timer. XeSSFG also ignores frontend Presents caused only by Magpie's software cursor or overlay, preventing mouse movement from inflating the SDK input rate; the cursor updates with the next genuine captured frame.
 
 | Effect | Hardware and multiplier | Current status |
 | --- | --- | --- |
-| DLSS Frame Generation | NVIDIA RTX; configurable x2/x3/x4 | Experimental. Failure protection keeps real captured frames visible, first resets history, then recreates the feature once, and finally disables DLSSFG only for the current scaling session after repeated failures. CPU/GPU fence synchronization remains enabled. |
+| `DLSS FG_Experimental` | NVIDIA RTX; configurable x2/x3/x4 | Motion defaults on; estimated depth defaults off. Shared D3D11/D3D12 resources use the same captured base-frame ID. Failure protection preserves real frames and disables DLSSFG only for the current scaling session after repeated failures. |
 | XeSS Frame Generation x2 Zero-MV | Compatible Intel, NVIDIA, and AMD GPUs; x2 | Experimental cross-vendor path using the XeSS-FG D3D12 proxy swap chain. |
 | XeSS Multi-Frame Generation x2-x4 Zero-MV | Intel Arc; x2/x3/x4 | Experimental Arc multi-frame path. The requested multiplier is clamped to the capability reported by the GPU and driver; non-Arc hardware is limited or falls back to x2. |
 
@@ -146,6 +153,8 @@ Third-party SDKs, models, wheels, and proprietary NVIDIA binaries are not part o
 - [NVIDIA `nvidia-vfx` package](https://pypi.org/project/nvidia-vfx/)
 
 To build the optional backends, create `src/BuildOptions.props.user` and define the feature switches and local SDK paths there. The file is excluded by `.gitignore`; it is machine-specific and must not be committed to the public repository.
+
+The v0.5.6 experimental binary package uses a community-modified `nvngx_dlssnr.dll` 310.8.0.0 intended for RTX 40-series and RTX 50-series testing. That DLL is a Release asset only: it is not included in this source tree or the automatically generated source archives. Because it was modified, its Authenticode file hash no longer matches NVIDIA's original signature.
 
 Native upscalers and RTX Video are dispatched through the shared `NativeEffectBackend` interface and `NativeEffectBackendFactory`. This keeps SDK-specific detection, creation, resize, and draw logic out of the main Renderer path. Frame-generation presenters remain separate because they publish additional frames at the terminal presentation stage.
 
