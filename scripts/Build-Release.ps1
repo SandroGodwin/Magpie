@@ -1,5 +1,6 @@
 param(
     [string]$PackageName = "Magpie-Experimental-x64",
+    [string]$ReleaseDirectory,
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
     [string]$Version,
@@ -13,14 +14,7 @@ Set-StrictMode -Version Latest
 $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $workspaceRoot = Split-Path $sourceRoot -Parent
 $releaseRoot = [System.IO.Path]::GetFullPath((Join-Path $workspaceRoot "release"))
-$stagingDir = [System.IO.Path]::GetFullPath((Join-Path $releaseRoot $PackageName))
-$zipPath = [System.IO.Path]::GetFullPath((Join-Path $releaseRoot "$PackageName.zip"))
 $buildOutput = Join-Path $sourceRoot "bin\$Platform\$Configuration"
-
-if (!$stagingDir.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-    !$zipPath.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Release path escaped the release directory."
-}
 
 function Find-MSBuild {
     $command = Get-Command msbuild.exe -ErrorAction SilentlyContinue
@@ -129,6 +123,55 @@ if (!$versionMatch.Success) {
     throw "Version must begin with major.minor.patch: $Version"
 }
 
+if (!$ReleaseDirectory) {
+    $ReleaseDirectory = if ($Version.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $Version
+    } else {
+        "v$Version"
+    }
+}
+$releaseContainer = [System.IO.Path]::GetFullPath((Join-Path $releaseRoot $ReleaseDirectory))
+$stagingDir = [System.IO.Path]::GetFullPath((Join-Path $releaseContainer $PackageName))
+$zipPath = [System.IO.Path]::GetFullPath((Join-Path $releaseContainer "$PackageName.zip"))
+
+if (!$releaseContainer.StartsWith($releaseRoot + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Release container escaped the release directory."
+}
+if (!$stagingDir.StartsWith($releaseContainer + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase) -or
+    !$zipPath.StartsWith($releaseContainer + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Release path escaped the release directory."
+}
+
+function Stop-RunningMagpie {
+    $running = Get-Process -Name "Magpie" -ErrorAction SilentlyContinue
+    if (!$running) { return }
+
+    try {
+        $running | Stop-Process -Force -ErrorAction Stop
+    } catch {
+        $processIds = ($running.Id | ForEach-Object { [string][int]$_ }) -join ','
+        $command = "Stop-Process -Id $processIds -Force"
+        $elevated = Start-Process -FilePath "powershell.exe" -Verb RunAs -WindowStyle Hidden `
+            -ArgumentList @("-NoProfile", "-Command", $command) -Wait -PassThru
+        if ($elevated.ExitCode -ne 0) {
+            throw "Elevated Magpie shutdown failed with exit code $($elevated.ExitCode)."
+        }
+    }
+
+    Start-Sleep -Milliseconds 250
+    if (Get-Process -Name "Magpie" -ErrorAction SilentlyContinue) {
+        throw "Magpie is still running after the shutdown attempt."
+    }
+}
+
+# Magpie and its PRI must come from the same complete build. Stop the running
+# application before Rebuild so MSBuild never falls back to deploying a lone
+# replacement executable around a locked output directory.
+Stop-RunningMagpie
+
 if (!$SkipBuild) {
     $msbuild = Find-MSBuild
     Add-ConanToPath
@@ -155,30 +198,22 @@ if (!$SkipBuild) {
     }
 }
 
-if (!(Test-Path -LiteralPath (Join-Path $buildOutput "Magpie.exe"))) {
-    throw "Release build output was not found: $buildOutput"
+$requiredRuntimePaths = @(
+    "Magpie.exe",
+    "resources.pri",
+    "Microsoft.UI.Xaml.dll",
+    "TouchHelper.exe",
+    "Updater.exe",
+    "effects"
+)
+$missingRuntimePaths = @($requiredRuntimePaths | Where-Object {
+    !(Test-Path -LiteralPath (Join-Path $buildOutput $_))
+})
+if ($missingRuntimePaths.Count -ne 0) {
+    throw "Release runtime layout is incomplete in $buildOutput. Missing: $($missingRuntimePaths -join ', ')"
 }
 
-$running = Get-Process -Name "Magpie" -ErrorAction SilentlyContinue
-if ($running) {
-    try {
-        $running | Stop-Process -Force -ErrorAction Stop
-    } catch {
-        $processIds = ($running.Id | ForEach-Object { [string][int]$_ }) -join ','
-        $command = "Stop-Process -Id $processIds -Force"
-        $elevated = Start-Process -FilePath "powershell.exe" -Verb RunAs -WindowStyle Hidden `
-            -ArgumentList @("-NoProfile", "-Command", $command) -Wait -PassThru
-        if ($elevated.ExitCode -ne 0) {
-            throw "Elevated Magpie shutdown failed with exit code $($elevated.ExitCode)."
-        }
-    }
-    Start-Sleep -Milliseconds 250
-    if (Get-Process -Name "Magpie" -ErrorAction SilentlyContinue) {
-        throw "Magpie is still running after the shutdown attempt."
-    }
-}
-
-New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $releaseContainer -Force | Out-Null
 if (Test-Path -LiteralPath $stagingDir) {
     # Keep the staging root itself. Explorer, antivirus and recently exited
     # GUI processes can briefly retain a handle to the directory even after
@@ -190,7 +225,8 @@ if (Test-Path -LiteralPath $stagingDir) {
 }
 
 Get-ChildItem -LiteralPath $buildOutput | Where-Object {
-    $_.Extension -notin ".pdb", ".lib", ".exp"
+    $_.Extension -notin ".pdb", ".lib", ".exp" -and
+    $_.Name -ne "Magpie.next.exe"
 } | Copy-Item -Destination $stagingDir -Recurse
 
 # Never package per-user runtime state left in bin/ by local test launches.
@@ -255,7 +291,20 @@ $manifest | ConvertTo-Json -Depth 8 | Set-Content `
 # manifest this makes repeated packages comparable and avoids local wall-clock
 # metadata in the archive.
 Get-ChildItem -LiteralPath $stagingDir -Recurse -Force | ForEach-Object {
-    $_.LastWriteTimeUtc = $sourceDate
+    $item = $_
+    $normalized = $false
+    for ($attempt = 1; $attempt -le 5; ++$attempt) {
+        try {
+            $item.LastWriteTimeUtc = $sourceDate
+            $normalized = $true
+            break
+        } catch {
+            if ($attempt -lt 5) { Start-Sleep -Milliseconds 200 }
+        }
+    }
+    if (!$normalized) {
+        Write-Warning "Could not normalize timestamp for $($item.FullName); ZIP entry time remains normalized."
+    }
 }
 # The staging root can remain briefly open in Explorer or by a recently exited
 # GUI process. ZIP entries are created from its children, so the root timestamp
