@@ -21,6 +21,8 @@
 #include "DLSSFrameGenerator.h"
 #include "NativeEffectBackend.h"
 #include "NativeEffectBackendFactory.h"
+#include "NvidiaOpticalFlowProvider.h"
+#include "DepthAnythingV2Provider.h"
 #include "XeSSFGPresenter.h"
 #ifdef MP_USE_COMPSWAPCHAIN
 #include "CompSwapchainPresenter.h"
@@ -31,6 +33,20 @@
 #include <d3dkmthk.h>
 
 namespace Magpie {
+
+static FrameGuidanceRequirements CollectFrameGuidanceRequirements(
+	const std::vector<std::unique_ptr<NativeEffectBackend>>& backends,
+	const DLSSFrameGenerator* frameGenerator
+) noexcept {
+	FrameGuidanceRequirements result;
+	for (const auto& backend : backends) {
+		if (backend) result.Merge(backend->GetFrameGuidanceRequirements());
+	}
+	if (frameGenerator) {
+		result.Merge(frameGenerator->GetFrameGuidanceRequirements());
+	}
+	return result;
+}
 
 // 大多数时候会在最后添加 Bicubic 来降采样或升采样，因此缓存在内存中
 static EffectDesc bicubicDesc;
@@ -389,7 +405,7 @@ bool Renderer::OnResize() noexcept {
 		_sharedTextureMutexKey.store(0, std::memory_order_relaxed);
 
 		// 渲染完成再通知前端防止黑屏。前端会自动执行渲染，因此无需发送 WM_FRONTEND_RENDER
-		_BackendRender(outputTexture);
+		_BackendRender(outputTexture, false);
 
 		_sharedTextureHandle.store(sharedHandle, std::memory_order_release);
 		_sharedTextureHandle.notify_one();
@@ -595,7 +611,7 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 	_dlssFrameGenerator.reset();
 	_dlssFgConsecutiveFailures = 0;
 	_dlssFgRecoveryAttempts = 0;
-	uint32_t dlssFrameGenerationMultiplier = 0;
+	std::optional<DLSSFrameGenerationSettings> dlssFrameGenerationSettings;
 
 	ID3D11Texture2D* inOutTexture = _frameSource->GetOutput();
 	for (uint32_t i = 0; i < effectCount; ++i) {
@@ -612,6 +628,7 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 
 		NativeEffectBackendResult nativeBackend = CreateNativeEffectBackend(
 			effects[i].name,
+			effects[i],
 			_backendResources,
 			_effectDrawers[i].GetTexture(0),
 			_effectDrawers[i].GetOutputTexture());
@@ -621,14 +638,23 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 		_nativeEffectBackends[i] = std::move(nativeBackend.backend);
 
 		if (IsDLSSFrameGenerationEffect(effects[i].name)) {
-			if (dlssFrameGenerationMultiplier) {
+			if (dlssFrameGenerationSettings) {
 				Logger::Get().Error("Only one DLSS Frame Generation effect is allowed");
 				return nullptr;
 			}
-			auto it = effects[i].parameters.find("multiplier");
-			const float value = it == effects[i].parameters.end() ? 2.0f : it->second;
-			dlssFrameGenerationMultiplier = std::clamp(
-				(uint32_t)std::lround(value), 2u, 4u);
+			auto getParameter = [&](std::string_view name, float defaultValue) {
+				auto it = effects[i].parameters.find(std::string(name));
+				return it == effects[i].parameters.end() ? defaultValue : it->second;
+			};
+			dlssFrameGenerationSettings = DLSSFrameGenerationSettings{
+				.multiplier = std::clamp(
+					(uint32_t)std::lround(getParameter("multiplier", 2.0f)),
+					2u, 4u),
+				.useMotionVectors =
+					getParameter("useMotionVectors", 1.0f) >= 0.5f,
+				.useEstimatedDepth =
+					getParameter("useEstimatedDepth", 0.0f) >= 0.5f
+			};
 		}
 
 		// 释放 CSO 内存，不再需要它们
@@ -644,8 +670,9 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 		}
 	}
 
-	if (dlssFrameGenerationMultiplier &&
-		!_InitializeDLSSFrameGenerator(inOutTexture, dlssFrameGenerationMultiplier)) {
+	if (dlssFrameGenerationSettings &&
+		!_InitializeDLSSFrameGenerator(
+			inOutTexture, *dlssFrameGenerationSettings)) {
 		return nullptr;
 	}
 
@@ -753,6 +780,17 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 	const uint32_t effectCount = (uint32_t)effects.size();
 
 	ID3D11Texture2D* inOutTexture = _frameSource->GetOutput();
+	D3D11_TEXTURE2D_DESC sourceDesc{};
+	inOutTexture->GetDesc(&sourceDesc);
+	const FrameGuidanceRequirements guidanceRequirements =
+		CollectFrameGuidanceRequirements(
+			_nativeEffectBackends, _dlssFrameGenerator.get());
+	if (_frameGuidanceService.IsInitialized() && !_frameGuidanceService.Resize(
+		{ sourceDesc.Width, sourceDesc.Height }, _capturedFrameId,
+		guidanceRequirements)) {
+		Logger::Get().Error("Resize Frame Guidance service failed");
+		return nullptr;
+	}
 	for (uint32_t i = 0; i < effectCount; ++i) {
 		if (!_effectDrawers[i].ResizeTextures(
 			_effectDescs[i],
@@ -766,6 +804,15 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 
 		if (_nativeEffectBackends[i] && !_nativeEffectBackends[i]->Resize(
 			_backendResources, _effectDrawers[i].GetTexture(0), _effectDrawers[i].GetOutputTexture())) {
+			if (effects[i].name == "DLSSNR\\DLSSNR_AI_Filter") {
+				const char status[] =
+					"DLSSNR STATUS: Feature=18 created=false stage=resize "
+					"fallback=pass-through";
+				Logger::Get().Warn(status);
+				OutputDebugStringA(status);
+				_nativeEffectBackends[i].reset();
+				continue;
+			}
 			Logger::Get().Error(fmt::format("Resize native effect {} failed", effects[i].name));
 			return nullptr;
 		}
@@ -818,8 +865,9 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 	}
 
 	if (_dlssFrameGenerator) {
-		const uint32_t multiplier = _dlssFrameGenerator->Multiplier();
-		if (!_InitializeDLSSFrameGenerator(inOutTexture, multiplier)) {
+		const DLSSFrameGenerationSettings settings =
+			_dlssFrameGenerator->Settings();
+		if (!_InitializeDLSSFrameGenerator(inOutTexture, settings)) {
 			return nullptr;
 		}
 	}
@@ -829,10 +877,14 @@ ID3D11Texture2D* Renderer::_ResizeEffects() noexcept {
 
 bool Renderer::_InitializeDLSSFrameGenerator(
 	ID3D11Texture2D* input,
-	uint32_t multiplier
+	const DLSSFrameGenerationSettings& settings
 ) noexcept {
+	D3D11_TEXTURE2D_DESC sourceDesc{};
+	_frameSource->GetOutput()->GetDesc(&sourceDesc);
 	auto frameGenerator = std::make_unique<DLSSFrameGenerator>();
-	if (!frameGenerator->Initialize(_backendResources, input, multiplier)) {
+	if (!frameGenerator->Initialize(
+		_backendResources, input,
+		{ sourceDesc.Width, sourceDesc.Height }, settings)) {
 		return false;
 	}
 	if (_frameRateFilterTarget > 0.0f) {
@@ -862,9 +914,10 @@ void Renderer::_HandleDLSSFrameGenerationFailure(ID3D11Texture2D* input) noexcep
 
 	if (_dlssFgRecoveryAttempts == 0) {
 		++_dlssFgRecoveryAttempts;
-		const uint32_t multiplier = _dlssFrameGenerator->Multiplier();
+		const DLSSFrameGenerationSettings settings =
+			_dlssFrameGenerator->Settings();
 		Logger::Get().Warn("DLSS Frame Generation failed again; recreating the feature once");
-		if (_InitializeDLSSFrameGenerator(input, multiplier)) {
+		if (_InitializeDLSSFrameGenerator(input, settings)) {
 			_dlssFgConsecutiveFailures = 0;
 			return;
 		}
@@ -1006,7 +1059,8 @@ void Renderer::_BackendThreadProc() noexcept {
 			continue;
 		}
 
-		switch (_frameSource->Update()) {
+		const FrameSourceState frameSourceState = _frameSource->Update();
+		switch (frameSourceState) {
 		case FrameSourceState::Waiting:
 			if (stepTimerStatus != StepTimerStatus::ForceNewFrame) {
 				if (fpsUpdated) {
@@ -1020,7 +1074,9 @@ void Renderer::_BackendThreadProc() noexcept {
 			// 强制帧
 			[[fallthrough]];
 		case FrameSourceState::NewFrame:
-			_BackendRender(_effectDrawers.back().GetOutputTexture());
+			_BackendRender(
+				_effectDrawers.back().GetOutputTexture(),
+				frameSourceState == FrameSourceState::NewFrame);
 			// DLSSFG uses synchronous, individually paced presentation so generated
 			// frames cannot be coalesced into the following real frame.
 			if (!_dlssFrameGenerator ||
@@ -1076,7 +1132,6 @@ HANDLE Renderer::_InitBackend() noexcept {
 	if (!_InitFrameSource()) {
 		return NULL;
 	}
-
 	{
 		std::optional<float> maxFrameRate;
 		if (_frameSource->WaitType() == FrameSourceWaitType::NoWait) {
@@ -1144,6 +1199,29 @@ HANDLE Renderer::_InitBackend() noexcept {
 		return NULL;
 	}
 
+	const FrameGuidanceRequirements guidanceRequirements =
+		CollectFrameGuidanceRequirements(
+			_nativeEffectBackends, _dlssFrameGenerator.get());
+	if (guidanceRequirements.Any()) {
+#ifdef MP_ENABLE_NVIDIA_OPTICAL_FLOW
+		if (guidanceRequirements.motion) {
+			_frameGuidanceService.SetMotionVectorProvider(
+				std::make_unique<NvidiaOpticalFlowProvider>());
+		}
+#endif
+#ifdef MP_ENABLE_DEPTH_ANYTHING_V2
+		if (guidanceRequirements.depth) {
+			_frameGuidanceService.SetDepthProvider(
+				std::make_unique<DepthAnythingV2Provider>(
+					guidanceRequirements.depthInferenceInterval));
+		}
+#endif
+		if (!_frameGuidanceService.Initialize(
+			_backendResources, _frameSource->GetOutput(), guidanceRequirements)) {
+			return NULL;
+		}
+	}
+
 	HRESULT hr = d3dDevice->CreateFence(
 		_fenceValue, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(&_d3dFence));
 	if (FAILED(hr)) {
@@ -1175,8 +1253,21 @@ HANDLE Renderer::_InitBackend() noexcept {
 	return sharedHandle;
 }
 
-void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
+void Renderer::_BackendRender(
+	ID3D11Texture2D* effectsOutput,
+	bool isNewCaptureFrame
+) noexcept {
 	_stepTimer.PrepareForRender();
+	if (isNewCaptureFrame) {
+		++_capturedFrameId;
+		const FrameGuidanceRequirements guidanceRequirements =
+			CollectFrameGuidanceRequirements(
+				_nativeEffectBackends, _dlssFrameGenerator.get());
+		if (_frameGuidanceService.IsInitialized()) {
+			_frameGuidanceService.BeginFrame(
+				_capturedFrameId, _frameSource->GetOutput(), guidanceRequirements);
+		}
+	}
 	if (_dlssFrameGenerator) {
 		++_dlssFgCapturedFrameCount;
 	}
@@ -1194,8 +1285,14 @@ void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 	for (uint32_t i = 0; i < _effectDrawers.size(); ++i) {
 		const EffectDrawer& effectDrawer = _effectDrawers[i];
 		if (i < _nativeEffectBackends.size() && _nativeEffectBackends[i]) {
-			if (!_nativeEffectBackends[i]->Draw(
-				effectDrawer.GetTexture(0), effectDrawer.GetOutputTexture())) {
+			const NativeEffectDrawContext drawContext{
+				.input = effectDrawer.GetTexture(0),
+				.output = effectDrawer.GetOutputTexture(),
+				.frameId = _capturedFrameId,
+				.frameGuidance = _frameGuidanceService.View(),
+				.zeroFrameGuidance = _frameGuidanceService.ZeroView()
+			};
+			if (!_nativeEffectBackends[i]->Draw(drawContext)) {
 				Logger::Get().Error("Draw native effect failed");
 			}
 			_effectsProfiler.OnEndPass(d3dDC);
@@ -1209,6 +1306,9 @@ void Renderer::_BackendRender(ID3D11Texture2D* effectsOutput) noexcept {
 	if (_dlssFrameGenerator) {
 		const bool generated = _dlssFrameGenerator->Draw(
 			effectsOutput,
+			_capturedFrameId,
+			_frameGuidanceService.View(),
+			_frameGuidanceService.ZeroView(),
 			[this](ID3D11Texture2D* generatedFrame) {
 				return _PublishBackendTexture(generatedFrame, true);
 			}

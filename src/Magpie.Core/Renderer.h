@@ -4,6 +4,7 @@
 #include "DeviceResources.h"
 #include "EffectDrawer.h"
 #include "EffectsProfiler.h"
+#include "FrameGuidanceService.h"
 #include "OverlayDrawer.h"
 #include "PresenterBase.h"
 #include "StepTimer.h"
@@ -88,11 +89,17 @@ private:
 
 	HANDLE _CreateSharedTexture(ID3D11Texture2D* effectsOutput) noexcept;
 
-	void _BackendRender(ID3D11Texture2D* effectsOutput) noexcept;
+	void _BackendRender(
+		ID3D11Texture2D* effectsOutput,
+		bool isNewCaptureFrame
+	) noexcept;
 
 	bool _PublishBackendTexture(ID3D11Texture2D* texture, bool synchronous) noexcept;
 
-	bool _InitializeDLSSFrameGenerator(ID3D11Texture2D* input, uint32_t multiplier) noexcept;
+	bool _InitializeDLSSFrameGenerator(
+		ID3D11Texture2D* input,
+		const struct DLSSFrameGenerationSettings& settings
+	) noexcept;
 	void _HandleDLSSFrameGenerationFailure(ID3D11Texture2D* input) noexcept;
 	void _DisableDLSSFrameGenerationForSession() noexcept;
 
@@ -128,6 +135,8 @@ private:
 	DeviceResources _backendResources;
 	Magpie::BackendDescriptorStore _backendDescriptorStore;
 	std::unique_ptr<FrameSourceBase> _frameSource;
+	FrameGuidanceService _frameGuidanceService;
+	FrameGuidanceFrameId _capturedFrameId = 0;
 	std::vector<EffectDrawer> _effectDrawers;
 	std::vector<std::unique_ptr<class NativeEffectBackend>> _nativeEffectBackends;
 	std::unique_ptr<class DLSSFrameGenerator> _dlssFrameGenerator;

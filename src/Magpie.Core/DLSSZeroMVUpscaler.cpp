@@ -3,7 +3,6 @@
 #include "DeviceResources.h"
 #include "DirectXHelper.h"
 #include "Logger.h"
-#include "HalfResOpticalFlow.h"
 
 #ifdef MP_ENABLE_DLSS_ZEROMV
 #include <nvsdk_ngx.h>
@@ -42,22 +41,21 @@ void DLSSZeroMVUpscaler::_Reset() noexcept {
 	_device = nullptr;
 	_d3dDC = nullptr;
 	_resetHistory = true;
-	_enableJitter = false;
-	_enableOpticalFlow = false;
-	_opticalFlow.reset();
+	_settings = {};
 	_frameIndex = 0;
+	_lastGuidanceBinding = UINT8_MAX;
+	_lastGuidanceResetFrameId =
+		std::numeric_limits<FrameGuidanceFrameId>::max();
 }
 
 bool DLSSZeroMVUpscaler::Initialize(
 	DeviceResources& deviceResources,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output,
-	bool enableJitter,
-	bool enableOpticalFlow
+	const DLSSSRSettings& settings
 ) noexcept {
 	_Reset();
-	_enableJitter = enableJitter;
-	_enableOpticalFlow = enableOpticalFlow;
+	_settings = settings;
 	_device = deviceResources.GetD3DDevice();
 	_d3dDC = deviceResources.GetD3DDC();
 
@@ -97,15 +95,6 @@ bool DLSSZeroMVUpscaler::Initialize(
 		_Reset();
 		return false;
 	}
-	if (_enableOpticalFlow) {
-		_opticalFlow = std::make_unique<HalfResOpticalFlow>();
-		if (!_opticalFlow->Initialize(_device, _d3dDC, input)) {
-			Logger::Get().Error("Initialize DLSS half-resolution optical flow failed");
-			_Reset();
-			return false;
-		}
-	}
-
 	HRESULT hr = _device->CreateUnorderedAccessView(
 		_zeroMotionVectors.get(), nullptr, _zeroMotionVectorsUav.put());
 	if (SUCCEEDED(hr)) {
@@ -147,9 +136,8 @@ bool DLSSZeroMVUpscaler::Initialize(
 	}
 	_parameters = parameters;
 
-	// Preset J trades a little more flickering for less ghosting than the
-	// default transformer preset K. That trade-off is preferable here because
-	// captured frames have no valid motion vectors to reproject history with.
+	// Preset J remains the established default for this captured-frame path.
+	// Real optical flow improves temporal input but is not engine motion.
 	NVSDK_NGX_Parameter_SetI(
 		parameters,
 		NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced,
@@ -164,8 +152,11 @@ bool DLSSZeroMVUpscaler::Initialize(
 			.InTargetHeight = outputDesc.Height,
 			.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_Balanced
 		},
-		.InFeatureCreateFlags = NVSDK_NGX_DLSS_Feature_Flags_MVLowRes |
-			NVSDK_NGX_DLSS_Feature_Flags_AutoExposure,
+		.InFeatureCreateFlags = uint32_t(
+			NVSDK_NGX_DLSS_Feature_Flags_MVLowRes |
+			NVSDK_NGX_DLSS_Feature_Flags_AutoExposure |
+			(_settings.useEstimatedDepth ?
+				NVSDK_NGX_DLSS_Feature_Flags_DepthInverted : 0)),
 		.InEnableOutputSubrects = false
 	};
 
@@ -179,10 +170,22 @@ bool DLSSZeroMVUpscaler::Initialize(
 	_feature = feature;
 
 	Logger::Get().Info(fmt::format(
-		"DLSS experimental backend initialized (Balanced, preset J, jitter={}, opticalFlow={}): {}x{} -> {}x{}",
-		_enableJitter, _enableOpticalFlow,
-		inputDesc.Width, inputDesc.Height, outputDesc.Width, outputDesc.Height));
+		"DLSS SR_Experimental initialized (Balanced, preset J): {}x{} -> {}x{}, "
+		"requestedMotion={}, requestedDepth={}, jitter={}",
+		inputDesc.Width, inputDesc.Height, outputDesc.Width, outputDesc.Height,
+		_settings.useMotionVectors, _settings.useEstimatedDepth,
+		_settings.enableJitter));
 	return true;
+}
+
+FrameGuidanceRequirements
+DLSSZeroMVUpscaler::GetFrameGuidanceRequirements() const noexcept {
+	FrameGuidanceRequirements result{ .zero = true };
+	// Estimated depth uses motion internally for temporal reprojection even
+	// when the user chooses not to bind motion to DLSS SR.
+	result.motion = _settings.useMotionVectors || _settings.useEstimatedDepth;
+	result.depth = _settings.useEstimatedDepth;
+	return result;
 }
 
 bool DLSSZeroMVUpscaler::Resize(
@@ -190,9 +193,8 @@ bool DLSSZeroMVUpscaler::Resize(
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output
 ) noexcept {
-	const bool enableJitter = _enableJitter;
-	const bool enableOpticalFlow = _enableOpticalFlow;
-	return Initialize(deviceResources, input, output, enableJitter, enableOpticalFlow);
+	const DLSSSRSettings settings = _settings;
+	return Initialize(deviceResources, input, output, settings);
 }
 
 static float Halton(uint32_t index, uint32_t base) noexcept {
@@ -206,7 +208,9 @@ static float Halton(uint32_t index, uint32_t base) noexcept {
 	return result;
 }
 
-bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
+bool DLSSZeroMVUpscaler::Draw(const NativeEffectDrawContext& context) noexcept {
+	ID3D11Texture2D* input = context.input;
+	ID3D11Texture2D* output = context.output;
 	if (!_feature || !_parameters || !_zeroMotionVectorsUav || !_zeroDepthUav ||
 		!_biasCurrentColorMaskUav) {
 		return false;
@@ -215,25 +219,80 @@ bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	static constexpr float ZERO[4]{};
 	static constexpr float BIAS_CURRENT_COLOR[4]{ 0.5f,0.5f,0.5f,0.5f };
 	ID3D11Texture2D* motionVectors = _zeroMotionVectors.get();
-	if (_enableOpticalFlow) {
-		if (!_opticalFlow || !_opticalFlow->Estimate(input)) return false;
-		motionVectors = _opticalFlow->GetMotionTexture();
-	} else {
-		_d3dDC->ClearUnorderedAccessViewFloat(_zeroMotionVectorsUav.get(), ZERO);
-	}
-	_d3dDC->ClearUnorderedAccessViewFloat(_zeroDepthUav.get(), ZERO);
-	_d3dDC->ClearUnorderedAccessViewFloat(_biasCurrentColorMaskUav.get(), BIAS_CURRENT_COLOR);
+	ID3D11Texture2D* depth = _zeroDepth.get();
+	bool guidanceReset = false;
+	bool realMotion = false;
+	bool realDepth = false;
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
 	input->GetDesc(&inputDesc);
+	const FrameGuidanceExtent inputExtent{ inputDesc.Width, inputDesc.Height };
+	const FrameGuidanceView guidance = SelectFrameGuidanceChannels(
+		context.frameGuidance, context.zeroFrameGuidance,
+		context.frameId, inputExtent,
+		_settings.useMotionVectors, _settings.useEstimatedDepth);
+	if (guidance.IsValidFor(context.frameId, inputExtent)) {
+		if (_settings.useMotionVectors) {
+			motionVectors = guidance.motion.texture;
+			realMotion = !guidance.motion.metadata.isZero;
+		}
+		if (_settings.useEstimatedDepth) {
+			depth = guidance.depth.texture;
+			realDepth = !guidance.depth.metadata.isZero;
+		}
+		guidanceReset = guidance.requiresHistoryReset;
+		for (const FrameGuidanceResource* resource :
+			{ &guidance.motion, &guidance.depth }) {
+			if (resource->metadata.sync.fence && resource->metadata.sync.value &&
+				FAILED(_d3dDC->Wait(
+					resource->metadata.sync.fence,
+					resource->metadata.sync.value))) {
+				Logger::Get().Warn("DLSS SR Frame Guidance producer wait failed; using Zero");
+				motionVectors = _zeroMotionVectors.get();
+				depth = _zeroDepth.get();
+				realMotion = false;
+				realDepth = false;
+				guidanceReset = true;
+				break;
+			}
+		}
+	}
+
+	const uint8_t binding = uint8_t(realMotion) |
+		(uint8_t(realDepth) << 1) |
+		(uint8_t(_settings.useMotionVectors) << 2) |
+		(uint8_t(_settings.useEstimatedDepth) << 3);
+	const bool bindingChanged = _lastGuidanceBinding != UINT8_MAX &&
+		binding != _lastGuidanceBinding;
+	if (binding != _lastGuidanceBinding) {
+		Logger::Get().Info(fmt::format(
+			"DLSS SR guidance frameId={}: requested motion={} depth={}, "
+			"bound motion={} depth={}, fallback={}",
+			context.frameId, _settings.useMotionVectors,
+			_settings.useEstimatedDepth,
+			realMotion ? "real" : "zero", realDepth ? "real" : "zero",
+			(!realMotion && _settings.useMotionVectors) ||
+			(!realDepth && _settings.useEstimatedDepth) ? "zero" : "none"));
+	}
+	guidanceReset = bindingChanged ||
+		(guidanceReset && _lastGuidanceResetFrameId != context.frameId);
+
+	if (motionVectors == _zeroMotionVectors.get()) {
+		_d3dDC->ClearUnorderedAccessViewFloat(_zeroMotionVectorsUav.get(), ZERO);
+	}
+	if (depth == _zeroDepth.get()) {
+		_d3dDC->ClearUnorderedAccessViewFloat(_zeroDepthUav.get(), ZERO);
+	}
+	_d3dDC->ClearUnorderedAccessViewFloat(_biasCurrentColorMaskUav.get(), BIAS_CURRENT_COLOR);
+
 	NVSDK_NGX_D3D11_DLSS_Eval_Params evalParams{};
 	evalParams.Feature.InSharpness = 0.3f;
 	evalParams.Feature.pInColor = input;
 	evalParams.Feature.pInOutput = output;
-	evalParams.pInDepth = _zeroDepth.get();
+	evalParams.pInDepth = depth;
 	evalParams.pInMotionVectors = motionVectors;
 	evalParams.pInBiasCurrentColorMask = _biasCurrentColorMask.get();
-	if (_enableJitter) {
+	if (_settings.enableJitter) {
 		// An 8-sample Halton(2,3) sequence centered around zero. Since Magpie
 		// cannot jitter the source application's projection, this is deliberately
 		// exposed as a separate metadata-only experiment.
@@ -245,7 +304,7 @@ bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 		evalParams.InJitterOffsetY = 0.0f;
 	}
 	evalParams.InRenderSubrectDimensions = { inputDesc.Width, inputDesc.Height };
-	evalParams.InReset = _resetHistory ? 1 : 0;
+	evalParams.InReset = _resetHistory || guidanceReset ? 1 : 0;
 	evalParams.InMVScaleX = 1.0f;
 	evalParams.InMVScaleY = 1.0f;
 	evalParams.InPreExposure = 1.0f;
@@ -263,6 +322,8 @@ bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) n
 	}
 
 	_resetHistory = false;
+	_lastGuidanceBinding = binding;
+	if (guidanceReset) _lastGuidanceResetFrameId = context.frameId;
 	return true;
 }
 
@@ -275,16 +336,21 @@ namespace Magpie {
 DLSSZeroMVUpscaler::~DLSSZeroMVUpscaler() = default;
 void DLSSZeroMVUpscaler::_Reset() noexcept {}
 
-bool DLSSZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*, bool, bool) noexcept {
+bool DLSSZeroMVUpscaler::Initialize(
+	DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*,
+	const DLSSSRSettings&) noexcept {
 	Logger::Get().Error("DLSS Zero-MV is disabled at build time");
 	return false;
 }
+
+FrameGuidanceRequirements
+DLSSZeroMVUpscaler::GetFrameGuidanceRequirements() const noexcept { return {}; }
 
 bool DLSSZeroMVUpscaler::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
 	return false;
 }
 
-bool DLSSZeroMVUpscaler::Draw(ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
+bool DLSSZeroMVUpscaler::Draw(const NativeEffectDrawContext&) noexcept {
 	return false;
 }
 

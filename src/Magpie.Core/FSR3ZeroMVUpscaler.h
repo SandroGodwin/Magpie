@@ -21,7 +21,7 @@ public:
 		bool enableJitter = false, bool useFsr4 = false) noexcept;
 	bool Resize(DeviceResources& resources, ID3D11Texture2D* input,
 		ID3D11Texture2D* output) noexcept override;
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
+	bool Draw(const NativeEffectDrawContext& context) noexcept override;
 
 private:
 	std::unique_ptr<Impl> _impl;

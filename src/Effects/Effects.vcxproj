@@ -23,22 +23,38 @@
     </CopyFileToFolders>
   </ItemDefinitionGroup>
   <ItemGroup>
-	<CopyFileToFolders Include="XeSSFG\XeSS_FrameGeneration_x2_ZeroMV.hlsl">
-	  <FileType>Document</FileType>
-	  <DeploymentContent>true</DeploymentContent>
-	</CopyFileToFolders>
-	<CopyFileToFolders Include="XeSSFG\XeSS_MultiFrameGeneration_ZeroMV.hlsl">
-	  <FileType>Document</FileType>
-	  <DeploymentContent>true</DeploymentContent>
-	</CopyFileToFolders>
-	<CopyFileToFolders Include="DLSSFG\DLSS_FrameGeneration.hlsl">
-	  <FileType>Document</FileType>
-	  <DeploymentContent>true</DeploymentContent>
-	</CopyFileToFolders>
-	<CopyFileToFolders Include="FrameRate_Filter.hlsl">
-	  <FileType>Document</FileType>
-	  <DeploymentContent>true</DeploymentContent>
-	</CopyFileToFolders>
+    <CopyFileToFolders Include="Diagnostics\FrameGuidance_Motion.hlsl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="Diagnostics\FrameGuidance_Confidence.hlsl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="Diagnostics\FrameGuidance_Depth.hlsl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="Diagnostics\FrameGuidance_DepthResidual.hlsl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="XeSSFG\XeSS_FrameGeneration_x2_ZeroMV.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="XeSSFG\XeSS_MultiFrameGeneration_ZeroMV.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="DLSSFG\DLSS_FrameGeneration.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="DLSSNR\DLSSNR_AI_Filter.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="FrameRate_Filter.hlsl">
+      <FileType>Document</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </CopyFileToFolders>
 	<CopyFileToFolders Include="MLAA\MLAA.hlsl">
 	  <FileType>Document</FileType>
 	</CopyFileToFolders>

@@ -4,7 +4,23 @@
 
 //!MAGPIE EFFECT
 //!VERSION 4
-//!SORT_NAME DLSS Zero-MV (Experimental)
+//!SORT_NAME DLSS SR_Experimental
+
+//!PARAMETER
+//!LABEL Use Motion Vectors
+//!DEFAULT 1
+//!MIN 0
+//!MAX 1
+//!STEP 1
+float useMotionVectors;
+
+//!PARAMETER
+//!LABEL Use Estimated Depth (Experimental)
+//!DEFAULT 0
+//!MIN 0
+//!MAX 1
+//!STEP 1
+float useEstimatedDepth;
 
 //!TEXTURE
 Texture2D INPUT;

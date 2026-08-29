@@ -18,7 +18,20 @@
     <EnableDLSSZeroMV>false</EnableDLSSZeroMV>
     <!-- Experimental NVIDIA DLSS Frame Generation through D3D11/D3D12 sharing. -->
     <EnableDLSSFrameGeneration>false</EnableDLSSFrameGeneration>
+    <!-- Experimental NVIDIA DLSSNR same-resolution AI filter. -->
+    <EnableDLSSNR>false</EnableDLSSNR>
     <DLSSSdkDir></DLSSSdkDir>
+    <DLSSNRRuntimeDir></DLSSNRRuntimeDir>
+    <!-- Renderer-owned NVIDIA Optical Flow frame-guidance provider. -->
+    <EnableNvidiaOpticalFlow>false</EnableNvidiaOpticalFlow>
+    <NvidiaOpticalFlowSdkDir></NvidiaOpticalFlowSdkDir>
+    <!-- Depth Anything V2 Small through TensorRT/DirectML ONNX Runtime. -->
+    <EnableDepthAnythingV2>false</EnableDepthAnythingV2>
+    <DepthAnythingModelDir></DepthAnythingModelDir>
+    <OnnxRuntimeTensorRTDir></OnnxRuntimeTensorRTDir>
+    <OnnxRuntimeDirectMLDir></OnnxRuntimeDirectMLDir>
+    <DirectMLRuntimeDir></DirectMLRuntimeDir>
+    <TensorRTRuntimeDir></TensorRTRuntimeDir>
     <EnableFSR2ZeroMV>false</EnableFSR2ZeroMV>
     <FSR2SdkDir></FSR2SdkDir>
     <FSR2RuntimeDir></FSR2RuntimeDir>

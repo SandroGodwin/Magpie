@@ -28,6 +28,9 @@ struct _AppSettingsData {
 
 	std::filesystem::path _configDir;
 	std::filesystem::path _configPath;
+	// Experimental DLSSNR parameter migrations are versioned independently from
+	// the main configuration folder so one-time default changes do not repeat.
+	uint32_t _experimentalDlssnrSettingsVersion = 1;
 
 	// LocalizationService::SupportedLanguages 索引
 	// -1 表示使用系统设置
@@ -382,6 +385,7 @@ private:
 	void _SetDefaultScalingModes() noexcept;
 
 	bool _UpdateConfigPath(std::filesystem::path* existingConfigPath = nullptr) noexcept;
+	bool _isConfigMigrationNeeded = false;
 
 	// 用于同步保存
 	wil::srwlock _saveLock;

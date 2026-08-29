@@ -467,7 +467,9 @@ static float Halton(uint32_t index, uint32_t base) noexcept {
 	return result;
 }
 
-bool XeSSZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
+bool XeSSZeroMVUpscaler::Draw(const NativeEffectDrawContext& drawContext) noexcept {
+	ID3D11Texture2D* input = drawContext.input;
+	ID3D11Texture2D* output = drawContext.output;
 	if (!_impl || !_impl->xessContext) return false;
 	Impl& impl = *_impl;
 	// A command allocator cannot be reset while its previous D3D12 submission
@@ -596,7 +598,7 @@ bool XeSSZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Te
 	return false;
 }
 bool XeSSZeroMVUpscaler::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept { return false; }
-bool XeSSZeroMVUpscaler::Draw(ID3D11Texture2D*, ID3D11Texture2D*) noexcept { return false; }
+bool XeSSZeroMVUpscaler::Draw(const NativeEffectDrawContext&) noexcept { return false; }
 
 }
 

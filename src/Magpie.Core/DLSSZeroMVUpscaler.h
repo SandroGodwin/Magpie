@@ -1,13 +1,18 @@
 #pragma once
-#include "HalfResOpticalFlow.h"
 #include "NativeEffectBackend.h"
 
 namespace Magpie {
 
 class DeviceResources;
 
-// Experimental DLSS-SR adapter for captured colour frames. Both depth and
-// motion vectors are deliberately cleared, and jitter is fixed at zero.
+struct DLSSSRSettings {
+	bool enableJitter = false;
+	bool useMotionVectors = true;
+	bool useEstimatedDepth = false;
+};
+
+// Experimental DLSS-SR adapter for captured colour frames. The non-jitter
+// path can consume Renderer-owned optical flow and estimated inverse depth.
 class DLSSZeroMVUpscaler final : public NativeEffectBackend {
 public:
 	DLSSZeroMVUpscaler() = default;
@@ -19,9 +24,10 @@ public:
 		DeviceResources& deviceResources,
 		ID3D11Texture2D* input,
 		ID3D11Texture2D* output,
-		bool enableJitter = false,
-		bool enableOpticalFlow = false
+		const DLSSSRSettings& settings = {}
 	) noexcept;
+
+	FrameGuidanceRequirements GetFrameGuidanceRequirements() const noexcept override;
 
 	bool Resize(
 		DeviceResources& deviceResources,
@@ -29,7 +35,7 @@ public:
 		ID3D11Texture2D* output
 	) noexcept override;
 
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
+	bool Draw(const NativeEffectDrawContext& context) noexcept override;
 
 private:
 	void _Reset() noexcept;
@@ -46,10 +52,11 @@ private:
 	void* _feature = nullptr;
 	bool _ngxInitialized = false;
 	bool _resetHistory = true;
-	bool _enableJitter = false;
-	bool _enableOpticalFlow = false;
+	DLSSSRSettings _settings{};
 	uint32_t _frameIndex = 0;
-	std::unique_ptr<HalfResOpticalFlow> _opticalFlow;
+	uint8_t _lastGuidanceBinding = UINT8_MAX;
+	FrameGuidanceFrameId _lastGuidanceResetFrameId =
+		std::numeric_limits<FrameGuidanceFrameId>::max();
 };
 
 }

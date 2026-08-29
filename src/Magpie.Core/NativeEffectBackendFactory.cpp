@@ -1,11 +1,14 @@
 #include "pch.h"
 #include "NativeEffectBackendFactory.h"
+#include "DLSSNRFilter.h"
 #include "DLSSZeroMVUpscaler.h"
 #include "FSR2ZeroMVUpscaler.h"
 #include "FSR3ZeroMVUpscaler.h"
 #include "RTXVideoDenoiser.h"
 #include "XeSSZeroMVUpscaler.h"
+#include "FrameGuidanceDiagnostics.h"
 #include "Logger.h"
+#include "ScalingOptions.h"
 
 namespace Magpie {
 
@@ -28,16 +31,87 @@ static NativeEffectBackendResult CreateBackend(
 
 NativeEffectBackendResult CreateNativeEffectBackend(
 	std::string_view effectName,
+	const EffectOption& option,
 	DeviceResources& resources,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output
 ) noexcept {
+	if (effectName.starts_with("Diagnostics\\FrameGuidance_")) {
+		auto getParameter = [&](std::string_view name, float defaultValue) {
+			auto it = option.parameters.find(std::string(name));
+			return it == option.parameters.end() ? defaultValue : it->second;
+		};
+		FrameGuidanceDiagnosticKind kind =
+			FrameGuidanceDiagnosticKind::Motion;
+		if (effectName.ends_with("Confidence")) {
+			kind = FrameGuidanceDiagnosticKind::Confidence;
+		} else if (effectName.ends_with("DepthResidual")) {
+			kind = FrameGuidanceDiagnosticKind::DepthResidual;
+		} else if (effectName.ends_with("Depth")) {
+			kind = FrameGuidanceDiagnosticKind::Depth;
+		}
+		return CreateBackend<FrameGuidanceDiagnostics>(
+			effectName, resources, input, output,
+			FrameGuidanceDiagnosticSettings{
+				.kind = kind,
+				.gain = std::max(0.001f, getParameter("gain", 1.0f)),
+				.invert = getParameter("invert", 0.0f) >= 0.5f,
+				.showRawDepth = getParameter("percentileClip", 1.0f) < 0.5f
+			});
+	}
+
+	if (effectName == "DLSSNR\\DLSSNR_AI_Filter") {
+		auto getParameter = [&](std::string_view name, float defaultValue) {
+			auto it = option.parameters.find(std::string(name));
+			return it == option.parameters.end() ? defaultValue : it->second;
+		};
+		DLSSNRSettings settings{
+			.style = std::clamp(
+				static_cast<int>(std::lround(getParameter("style", 0.0f))), 0, 2),
+			.intensity = std::clamp(getParameter("intensity", 1.0f), 0.0f, 1.0f),
+			.localToneStrength = std::clamp(
+				getParameter("localToneStrength", 1.0f), 0.0f, 1.0f),
+			.localStructureStrength = std::clamp(
+				getParameter("localStructureStrength", 1.0f), 0.0f, 1.0f),
+			.useAutoMask = getParameter("useAutoMask", 0.0f) >= 0.5f,
+			.guidanceMode = std::clamp(
+				static_cast<int>(std::lround(
+					getParameter("guidanceMode", 0.0f))), 0, 3),
+			.depthInferenceInterval = static_cast<uint32_t>(std::clamp(
+				static_cast<int>(std::lround(
+					getParameter("depthInferenceInterval", 4.0f))), 1, 8))
+		};
+		auto backend = std::make_unique<DLSSNRFilter>();
+		if (!backend->Initialize(resources, input, output, settings)) {
+			const char status[] =
+				"DLSSNR STATUS: Feature=18 created=false path=unavailable "
+				"fallback=pass-through\n";
+			Logger::Get().Warn(status);
+			OutputDebugStringA(status);
+			return {};
+		}
+		return { true, std::move(backend) };
+	}
+
 	if (effectName == "DLSS\\DLSS_ZeroMV" ||
 		effectName == "DLSS\\DLSS_ZeroMV_Jitter" ||
 		effectName == "DLSS\\DLSS_OpticalFlow") {
-		return CreateBackend<DLSSZeroMVUpscaler>(effectName, resources, input, output,
-			effectName == "DLSS\\DLSS_ZeroMV_Jitter",
-			effectName == "DLSS\\DLSS_OpticalFlow");
+		auto getParameter = [&](std::string_view name, float defaultValue) {
+			auto it = option.parameters.find(std::string(name));
+			return it == option.parameters.end() ? defaultValue : it->second;
+		};
+		const bool isJitter = effectName == "DLSS\\DLSS_ZeroMV_Jitter";
+		const bool isLegacyOpticalFlow =
+			effectName == "DLSS\\DLSS_OpticalFlow";
+		return CreateBackend<DLSSZeroMVUpscaler>(
+			effectName, resources, input, output,
+			DLSSSRSettings{
+				.enableJitter = isJitter,
+				.useMotionVectors = !isJitter && (isLegacyOpticalFlow ||
+					getParameter("useMotionVectors", 1.0f) >= 0.5f),
+				.useEstimatedDepth = !isJitter && !isLegacyOpticalFlow &&
+					getParameter("useEstimatedDepth", 0.0f) >= 0.5f
+			});
 	}
 
 	if (effectName == "FSR2\\FSR2_ZeroMV" ||

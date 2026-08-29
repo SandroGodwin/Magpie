@@ -94,6 +94,39 @@
     <ClInclude Include="Renderer.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="FrameGuidanceProvider.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameGuidanceService.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameGuidanceTypes.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameGuidancePerformance.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="ZeroFrameGuidanceProvider.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="NvidiaOpticalFlowProvider.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="DepthInferenceBackend.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="DepthAnythingV2Provider.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameGuidanceDiagnostics.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameGuidanceD3D12Interop.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="DLSSNRFilter.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="StepTimer.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -183,6 +216,30 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="Renderer.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameGuidanceService.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="ZeroFrameGuidanceProvider.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="NvidiaOpticalFlowProvider.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="DepthInferenceBackend.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="DepthAnythingV2Provider.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameGuidanceDiagnostics.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameGuidanceD3D12Interop.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="DLSSNRFilter.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="ExclModeHelper.cpp">

@@ -1,8 +1,17 @@
 #pragma once
+#include "FrameGuidanceTypes.h"
 
 namespace Magpie {
 
 class DeviceResources;
+
+struct NativeEffectDrawContext {
+	ID3D11Texture2D* input = nullptr;
+	ID3D11Texture2D* output = nullptr;
+	FrameGuidanceFrameId frameId = 0;
+	const FrameGuidanceView& frameGuidance;
+	const FrameGuidanceView& zeroFrameGuidance;
+};
 
 // Common lifetime and rendering contract for native SDK-backed effects.
 // Creation parameters remain in NativeEffectBackendFactory so Renderer does
@@ -11,13 +20,17 @@ class NativeEffectBackend {
 public:
 	virtual ~NativeEffectBackend() = default;
 
+	virtual FrameGuidanceRequirements GetFrameGuidanceRequirements() const noexcept {
+		return {};
+	}
+
 	virtual bool Resize(
 		DeviceResources& resources,
 		ID3D11Texture2D* input,
 		ID3D11Texture2D* output
 	) noexcept = 0;
 
-	virtual bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept = 0;
+	virtual bool Draw(const NativeEffectDrawContext& context) noexcept = 0;
 };
 
 }

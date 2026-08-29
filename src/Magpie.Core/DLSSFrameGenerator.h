@@ -1,11 +1,18 @@
 #pragma once
+#include "FrameGuidanceTypes.h"
 
 namespace Magpie {
 
 class DeviceResources;
 
-// Experimental DLSS Frame Generation adapter. Magpie only has captured color
-// frames, so depth and motion vectors are virtual zero-filled resources.
+struct DLSSFrameGenerationSettings {
+	uint32_t multiplier = 2;
+	bool useMotionVectors = true;
+	bool useEstimatedDepth = false;
+};
+
+// Experimental DLSS Frame Generation adapter. It consumes final effect-chain
+// color plus Renderer-owned guidance from the same captured base frame.
 class DLSSFrameGenerator {
 public:
 	struct Impl;
@@ -16,18 +23,34 @@ public:
 	DLSSFrameGenerator& operator=(const DLSSFrameGenerator&) = delete;
 	~DLSSFrameGenerator();
 
-	bool Initialize(DeviceResources& resources, ID3D11Texture2D* input,
-		uint32_t multiplier) noexcept;
-	bool Resize(DeviceResources& resources, ID3D11Texture2D* input) noexcept;
-	bool Draw(ID3D11Texture2D* input,
+	bool Initialize(
+		DeviceResources& resources,
+		ID3D11Texture2D* input,
+		FrameGuidanceExtent guidanceExtent,
+		const DLSSFrameGenerationSettings& settings
+	) noexcept;
+	bool Resize(
+		DeviceResources& resources,
+		ID3D11Texture2D* input,
+		FrameGuidanceExtent guidanceExtent
+	) noexcept;
+	bool Draw(
+		ID3D11Texture2D* input,
+		FrameGuidanceFrameId frameId,
+		const FrameGuidanceView& guidance,
+		const FrameGuidanceView& zeroGuidance,
 		const PublishCallback& publishGeneratedFrame) noexcept;
 	void RequestHistoryReset() noexcept;
 
+	FrameGuidanceRequirements GetFrameGuidanceRequirements() const noexcept;
+	const DLSSFrameGenerationSettings& Settings() const noexcept {
+		return _requestedSettings;
+	}
 	uint32_t Multiplier() const noexcept;
 
 private:
 	std::unique_ptr<Impl> _impl;
-	uint32_t _requestedMultiplier = 2;
+	DLSSFrameGenerationSettings _requestedSettings{};
 };
 
 }

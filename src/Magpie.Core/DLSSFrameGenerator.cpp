@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "DLSSFrameGenerator.h"
 #include "DeviceResources.h"
+#include "FrameGuidanceD3D12Interop.h"
 #include "Logger.h"
 
 #ifdef MP_ENABLE_DLSS_FRAME_GENERATION
@@ -25,6 +26,7 @@ struct DLSSFrameGenerator::Impl {
 	winrt::com_ptr<ID3D12Resource> sharedGenerated12;
 	winrt::com_ptr<ID3D12Resource> zeroMotion12;
 	winrt::com_ptr<ID3D12Resource> zeroDepth12;
+	std::unique_ptr<FrameGuidanceD3D12Interop> guidanceInterop;
 	winrt::com_ptr<ID3D12DescriptorHeap> descriptorHeap12;
 	winrt::com_ptr<ID3D11Fence> fence11;
 	winrt::com_ptr<ID3D12Fence> fence12;
@@ -33,7 +35,13 @@ struct DLSSFrameGenerator::Impl {
 	uint64_t fenceValue = 0;
 	uint32_t width = 0;
 	uint32_t height = 0;
+	uint32_t renderWidth = 0;
+	uint32_t renderHeight = 0;
 	uint32_t multiplier = 2;
+	DLSSFrameGenerationSettings settings{};
+	FrameGuidanceFrameId lastGuidanceResetFrameId =
+		std::numeric_limits<FrameGuidanceFrameId>::max();
+	uint8_t lastGuidanceBinding = UINT8_MAX;
 	bool ngxInitialized = false;
 	bool resetHistory = true;
 };
@@ -131,8 +139,8 @@ static bool CreateZeroTexture(
 ) noexcept {
 	D3D12_RESOURCE_DESC desc{};
 	desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	desc.Width = impl.width;
-	desc.Height = impl.height;
+	desc.Width = impl.renderWidth;
+	desc.Height = impl.renderHeight;
 	desc.DepthOrArraySize = 1;
 	desc.MipLevels = 1;
 	desc.Format = format;
@@ -187,18 +195,38 @@ DLSSFrameGenerator::~DLSSFrameGenerator() = default;
 bool DLSSFrameGenerator::Initialize(
 	DeviceResources& resources,
 	ID3D11Texture2D* input,
-	uint32_t multiplier
+	FrameGuidanceExtent guidanceExtent,
+	const DLSSFrameGenerationSettings& settings
 ) noexcept {
-	_requestedMultiplier = std::clamp(multiplier, 2u, 4u);
+	_requestedSettings = settings;
+	_requestedSettings.multiplier = std::clamp(settings.multiplier, 2u, 4u);
 	_impl.reset();
 	auto impl = std::make_unique<Impl>();
 	impl->device11 = resources.GetD3DDevice();
 	impl->context11 = resources.GetD3DDC();
+	impl->settings = _requestedSettings;
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
 	input->GetDesc(&inputDesc);
 	impl->width = inputDesc.Width;
 	impl->height = inputDesc.Height;
+	const bool guidanceRequested = impl->settings.useMotionVectors ||
+		impl->settings.useEstimatedDepth;
+	const bool compatibleGuidanceExtent = guidanceRequested &&
+		guidanceExtent.IsValid() &&
+		guidanceExtent.width <= impl->width &&
+		guidanceExtent.height <= impl->height;
+	impl->renderWidth = compatibleGuidanceExtent ?
+		guidanceExtent.width : impl->width;
+	impl->renderHeight = compatibleGuidanceExtent ?
+		guidanceExtent.height : impl->height;
+	if (guidanceRequested && !compatibleGuidanceExtent) {
+		Logger::Get().Warn(fmt::format(
+			"DLSS FG guidance extent {}x{} is incompatible with backbuffer {}x{}; "
+			"using Zero guidance at backbuffer size",
+			guidanceExtent.width, guidanceExtent.height,
+			impl->width, impl->height));
+	}
 
 	HRESULT hr = D3D12CreateDevice(
 		resources.GetGraphicsAdapter(), D3D_FEATURE_LEVEL_11_0,
@@ -303,11 +331,13 @@ bool DLSSFrameGenerator::Initialize(
 		maxGeneratedFrames = 1;
 	}
 	maxGeneratedFrames = std::clamp(maxGeneratedFrames, 1u, 3u);
-	impl->multiplier = std::min(_requestedMultiplier, maxGeneratedFrames + 1);
-	if (impl->multiplier != _requestedMultiplier) {
+	impl->multiplier = std::min(
+		_requestedSettings.multiplier, maxGeneratedFrames + 1);
+	if (impl->multiplier != _requestedSettings.multiplier) {
 		Logger::Get().Warn(fmt::format(
 			"DLSSFG {}x requested, hardware supports up to {}x; using {}x",
-			_requestedMultiplier, maxGeneratedFrames + 1, impl->multiplier));
+			_requestedSettings.multiplier,
+			maxGeneratedFrames + 1, impl->multiplier));
 	}
 
 	const uint32_t neverProvidedFlags =
@@ -325,8 +355,8 @@ bool DLSSFrameGenerator::Initialize(
 	createParams.Width = impl->width;
 	createParams.Height = impl->height;
 	createParams.NativeBackbufferFormat = inputDesc.Format;
-	createParams.RenderWidth = impl->width;
-	createParams.RenderHeight = impl->height;
+	createParams.RenderWidth = impl->renderWidth;
+	createParams.RenderHeight = impl->renderHeight;
 	createParams.DynamicResolutionScaling = false;
 	result = NGX_D3D12_CREATE_DLSSG(
 		impl->commandList12.get(), 1, 1, &impl->feature,
@@ -360,33 +390,99 @@ bool DLSSFrameGenerator::Initialize(
 	if (FAILED(hr) || !WaitForQueue(*impl)) {
 		return false;
 	}
+	impl->guidanceInterop = std::make_unique<FrameGuidanceD3D12Interop>();
+	if (!impl->guidanceInterop->Initialize(
+		impl->device12.get(), impl->fence12.get())) {
+		return false;
+	}
 
 	Logger::Get().Info(fmt::format(
-		"DLSS Frame Generation initialized: {}x{}, multiplier={}x, zero MV/depth",
-		impl->width, impl->height, impl->multiplier));
+		"DLSS FG_Experimental initialized: backbuffer={}x{}, render={}x{}, "
+		"multiplier={}x, requestedMotion={}, requestedDepth={}",
+		impl->width, impl->height, impl->renderWidth, impl->renderHeight,
+		impl->multiplier, impl->settings.useMotionVectors,
+		impl->settings.useEstimatedDepth));
 	_impl = std::move(impl);
 	return true;
 }
 
 bool DLSSFrameGenerator::Resize(
 	DeviceResources& resources,
-	ID3D11Texture2D* input
+	ID3D11Texture2D* input,
+	FrameGuidanceExtent guidanceExtent
 ) noexcept {
-	return Initialize(resources, input, _requestedMultiplier);
+	return Initialize(resources, input, guidanceExtent, _requestedSettings);
+}
+
+FrameGuidanceRequirements
+DLSSFrameGenerator::GetFrameGuidanceRequirements() const noexcept {
+	FrameGuidanceRequirements result{ .zero = true };
+	result.motion = _requestedSettings.useMotionVectors ||
+		_requestedSettings.useEstimatedDepth;
+	result.depth = _requestedSettings.useEstimatedDepth;
+	return result;
 }
 
 uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
-	return _impl ? _impl->multiplier : _requestedMultiplier;
+	return _impl ? _impl->multiplier : _requestedSettings.multiplier;
 }
 
 bool DLSSFrameGenerator::Draw(
 	ID3D11Texture2D* input,
+	FrameGuidanceFrameId frameId,
+	const FrameGuidanceView& guidance,
+	const FrameGuidanceView& zeroGuidance,
 	const PublishCallback& publishGeneratedFrame
 ) noexcept {
 	if (!_impl || !_impl->feature || !_impl->parameters) {
 		return false;
 	}
 	Impl& impl = *_impl;
+	const FrameGuidanceExtent renderExtent{
+		impl.renderWidth, impl.renderHeight
+	};
+	const FrameGuidanceView selected = SelectFrameGuidanceChannels(
+		guidance, zeroGuidance, frameId, renderExtent,
+		impl.settings.useMotionVectors,
+		impl.settings.useEstimatedDepth);
+	bool sharedGuidanceBound = false;
+	bool realMotion = false;
+	bool realDepth = false;
+	if ((impl.settings.useMotionVectors || impl.settings.useEstimatedDepth) &&
+		selected.IsValidFor(frameId, renderExtent) &&
+		impl.guidanceInterop->Update(selected, frameId, renderExtent) &&
+		impl.guidanceInterop->WaitForProducer(impl.context11, selected)) {
+		sharedGuidanceBound = true;
+		realMotion = impl.settings.useMotionVectors &&
+			!selected.motion.metadata.isZero;
+		realDepth = impl.settings.useEstimatedDepth &&
+			!selected.depth.metadata.isZero;
+	}
+
+	const uint8_t guidanceBinding = uint8_t(realMotion) |
+		(uint8_t(realDepth) << 1) |
+		(uint8_t(impl.settings.useMotionVectors) << 2) |
+		(uint8_t(impl.settings.useEstimatedDepth) << 3) |
+		(uint8_t(sharedGuidanceBound) << 4);
+	const bool bindingChanged = impl.lastGuidanceBinding != UINT8_MAX &&
+		impl.lastGuidanceBinding != guidanceBinding;
+	if (impl.lastGuidanceBinding != guidanceBinding) {
+		Logger::Get().Info(fmt::format(
+			"DLSS FG guidance frameId={}: requested motion={} depth={}, "
+			"produced motion={} depth={}, bound motion={} depth={}, fallback={}",
+			frameId, impl.settings.useMotionVectors,
+			impl.settings.useEstimatedDepth,
+			guidance.motion.metadata.valid && !guidance.motion.metadata.isZero,
+			guidance.depth.metadata.valid && !guidance.depth.metadata.isZero,
+			realMotion ? "real" : "zero", realDepth ? "real" : "zero",
+			!sharedGuidanceBound ? "interop-or-extent-zero" :
+			((impl.settings.useMotionVectors && !realMotion) ||
+			 (impl.settings.useEstimatedDepth && !realDepth) ?
+				"provider-zero" : "none")));
+	}
+	const bool guidanceReset = bindingChanged ||
+		(sharedGuidanceBound && selected.requiresHistoryReset &&
+			impl.lastGuidanceResetFrameId != frameId);
 
 	impl.context11->CopyResource(impl.sharedInput11.get(), input);
 	const uint64_t inputReady = ++impl.fenceValue;
@@ -424,11 +520,18 @@ bool DLSSFrameGenerator::Draw(
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 		};
 		impl.commandList12->ResourceBarrier(2, barriers);
+		if (sharedGuidanceBound) {
+			impl.guidanceInterop->Transition(
+				impl.commandList12.get(), D3D12_RESOURCE_STATE_COMMON,
+				D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		}
 
 		NVSDK_NGX_D3D12_DLSSG_Eval_Params evalParams{};
 		evalParams.pBackbuffer = impl.sharedInput12.get();
-		evalParams.pDepth = impl.zeroDepth12.get();
-		evalParams.pMVecs = impl.zeroMotion12.get();
+		evalParams.pDepth = sharedGuidanceBound ?
+			impl.guidanceInterop->Depth() : impl.zeroDepth12.get();
+		evalParams.pMVecs = sharedGuidanceBound ?
+			impl.guidanceInterop->Motion() : impl.zeroMotion12.get();
 		evalParams.pOutputInterpFrame = impl.sharedGenerated12.get();
 
 		NVSDK_NGX_DLSSG_Opt_Eval_Params optionalParams{};
@@ -439,26 +542,54 @@ bool DLSSFrameGenerator::Draw(
 		SetIdentity(optionalParams.clipToLensClip);
 		SetIdentity(optionalParams.clipToPrevClip);
 		SetIdentity(optionalParams.prevClipToClip);
-		optionalParams.mvecScale[0] = 1.0f;
-		optionalParams.mvecScale[1] = 1.0f;
+		// Frame Guidance motion is current-to-previous in render-pixel units;
+		// DLSSG consumes normalized vectors.
+		optionalParams.mvecScale[0] = 1.0f / float(impl.renderWidth);
+		optionalParams.mvecScale[1] = 1.0f / float(impl.renderHeight);
 		optionalParams.cameraUp[1] = 1.0f;
 		optionalParams.cameraRight[0] = 1.0f;
 		optionalParams.cameraFwd[2] = 1.0f;
 		optionalParams.cameraNear = 0.1f;
 		optionalParams.cameraFar = 1000.0f;
 		optionalParams.cameraFOV = 1.04719755f;
-		optionalParams.cameraAspectRatio = float(impl.width) / float(impl.height);
-		optionalParams.depthInverted = false;
-		optionalParams.cameraMotionIncluded = false;
-		optionalParams.reset = impl.resetHistory;
+		optionalParams.cameraAspectRatio =
+			float(impl.renderWidth) / float(impl.renderHeight);
+		optionalParams.depthInverted = impl.settings.useEstimatedDepth;
+		optionalParams.cameraMotionIncluded = realMotion;
+		optionalParams.reset = impl.resetHistory || guidanceReset;
 		optionalParams.motionVectorsInvalidValue = 0.0f;
-		optionalParams.motionVectorsDilated = false;
+		optionalParams.motionVectorsDilated = realMotion;
 		optionalParams.menuDetectionEnabled = false;
+		const FrameGuidanceRegion guidanceRegion = sharedGuidanceBound ?
+			selected.motion.metadata.validRegion :
+			FrameGuidanceRegion::Full(renderExtent);
+		optionalParams.mvecsSubrectBase = {
+			guidanceRegion.x, guidanceRegion.y
+		};
+		optionalParams.mvecsSubrectSize = {
+			guidanceRegion.width, guidanceRegion.height
+		};
+		const FrameGuidanceRegion depthRegion = sharedGuidanceBound ?
+			selected.depth.metadata.validRegion :
+			FrameGuidanceRegion::Full(renderExtent);
+		optionalParams.depthSubrectBase = {
+			depthRegion.x, depthRegion.y
+		};
+		optionalParams.depthSubrectSize = {
+			depthRegion.width, depthRegion.height
+		};
+		optionalParams.backbufferSubrectSize = {
+			impl.width, impl.height
+		};
+		optionalParams.outputInterpSubrectSize = {
+			impl.width, impl.height
+		};
 
 		const NVSDK_NGX_Result result = NGX_D3D12_EVALUATE_DLSSG(
 			impl.commandList12.get(), impl.feature, impl.parameters,
 			&evalParams, &optionalParams);
 		if (!NGXSucceeded(result)) {
+			impl.commandList12->Close();
 			Logger::Get().Error(fmt::format(
 				"NGX_D3D12_EVALUATE_DLSSG failed ({:#x}, index={}/{})",
 				(uint32_t)result, frameIndex, generatedFrameCount));
@@ -467,6 +598,12 @@ bool DLSSFrameGenerator::Draw(
 
 		for (D3D12_RESOURCE_BARRIER& barrier : barriers) {
 			std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+		}
+		if (sharedGuidanceBound) {
+			impl.guidanceInterop->Transition(
+				impl.commandList12.get(),
+				D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+				D3D12_RESOURCE_STATE_COMMON);
 		}
 		impl.commandList12->ResourceBarrier(2, barriers);
 		hr = impl.commandList12->Close();
@@ -477,6 +614,9 @@ bool DLSSFrameGenerator::Draw(
 		impl.queue12->ExecuteCommandLists(1, lists);
 		const uint64_t outputReady = ++impl.fenceValue;
 		hr = impl.queue12->Signal(impl.fence12.get(), outputReady);
+		if (SUCCEEDED(hr) && sharedGuidanceBound) {
+			impl.guidanceInterop->MarkSubmitted(outputReady);
+		}
 		if (SUCCEEDED(hr)) {
 			hr = impl.context11->Wait(impl.fence11.get(), outputReady);
 		}
@@ -489,6 +629,8 @@ bool DLSSFrameGenerator::Draw(
 	}
 
 	impl.resetHistory = false;
+	impl.lastGuidanceBinding = guidanceBinding;
+	if (guidanceReset) impl.lastGuidanceResetFrameId = frameId;
 	return true;
 }
 
@@ -508,21 +650,26 @@ struct DLSSFrameGenerator::Impl {};
 DLSSFrameGenerator::DLSSFrameGenerator() = default;
 DLSSFrameGenerator::~DLSSFrameGenerator() = default;
 bool DLSSFrameGenerator::Initialize(
-	DeviceResources&, ID3D11Texture2D*, uint32_t) noexcept {
+	DeviceResources&, ID3D11Texture2D*, FrameGuidanceExtent,
+	const DLSSFrameGenerationSettings&) noexcept {
 	Logger::Get().Error("DLSS Frame Generation is disabled at build time");
 	return false;
 }
 bool DLSSFrameGenerator::Resize(
-	DeviceResources&, ID3D11Texture2D*) noexcept {
+	DeviceResources&, ID3D11Texture2D*, FrameGuidanceExtent) noexcept {
 	return false;
 }
 bool DLSSFrameGenerator::Draw(
-	ID3D11Texture2D*, const PublishCallback&) noexcept {
+	ID3D11Texture2D*, FrameGuidanceFrameId,
+	const FrameGuidanceView&, const FrameGuidanceView&,
+	const PublishCallback&) noexcept {
 	return false;
 }
 void DLSSFrameGenerator::RequestHistoryReset() noexcept {}
+FrameGuidanceRequirements
+DLSSFrameGenerator::GetFrameGuidanceRequirements() const noexcept { return {}; }
 uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
-	return _requestedMultiplier;
+	return _requestedSettings.multiplier;
 }
 
 }

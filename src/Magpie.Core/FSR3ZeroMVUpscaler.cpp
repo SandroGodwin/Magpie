@@ -497,7 +497,9 @@ static float Halton(uint32_t index, uint32_t base) noexcept {
 	return result;
 }
 
-bool FSR3ZeroMVUpscaler::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
+bool FSR3ZeroMVUpscaler::Draw(const NativeEffectDrawContext& drawContext) noexcept {
+	ID3D11Texture2D* input = drawContext.input;
+	ID3D11Texture2D* output = drawContext.output;
 	if (!_impl || !_impl->context) return false;
 	Impl& impl = *_impl;
 	if (!WaitForFence(impl, impl.lastSubmittedValue)) return false;
@@ -601,7 +603,7 @@ bool FSR3ZeroMVUpscaler::Initialize(DeviceResources&, ID3D11Texture2D*, ID3D11Te
 	return false;
 }
 bool FSR3ZeroMVUpscaler::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept { return false; }
-bool FSR3ZeroMVUpscaler::Draw(ID3D11Texture2D*, ID3D11Texture2D*) noexcept { return false; }
+bool FSR3ZeroMVUpscaler::Draw(const NativeEffectDrawContext&) noexcept { return false; }
 }
 
 #endif

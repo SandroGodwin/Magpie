@@ -16,7 +16,7 @@ public:
 	bool Initialize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output,
 		bool enableOpticalFlow = false, bool enableJitter = false) noexcept;
 	bool Resize(DeviceResources& resources, ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
-	bool Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept override;
+	bool Draw(const NativeEffectDrawContext& context) noexcept override;
 
 private:
 	void _Reset() noexcept;

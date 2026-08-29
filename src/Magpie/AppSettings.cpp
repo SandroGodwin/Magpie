@@ -25,6 +25,7 @@ namespace Magpie {
 
 // 如果配置文件和已发布的正式版本不再兼容，应提高此版本号
 static constexpr uint32_t CONFIG_VERSION = 4;
+static constexpr uint32_t EXPERIMENTAL_DLSSNR_SETTINGS_VERSION = 1;
 
 _AppSettingsData::_AppSettingsData() {}
 
@@ -272,7 +273,9 @@ bool AppSettings::Initialize() noexcept {
 	_LoadSettings(((const rapidjson::Document&)doc).GetObj());
 
 	// 迁移旧版配置后立刻保存，_SetDefaultShortcuts 用于确保快捷键不为空
-	if (_SetDefaultShortcuts() || !Win32Helper::FileExists(_configPath.c_str())) {
+	if (_SetDefaultShortcuts() || _isConfigMigrationNeeded ||
+		!Win32Helper::FileExists(_configPath.c_str()))
+	{
 		SaveAsync();
 	}
 
@@ -633,6 +636,8 @@ bool AppSettings::_Save(const _AppSettingsData& data) noexcept {
 	writer.Double(data._minFrameRate);
 	writer.Key("disableFP16");
 	writer.Bool(data._isFP16Disabled);
+	writer.Key("experimentalDlssnrSettingsVersion");
+	writer.Uint(data._experimentalDlssnrSettingsVersion);
 
 	ScalingModesService::Get().Export(writer);
 
@@ -684,6 +689,10 @@ bool AppSettings::_Save(const _AppSettingsData& data) noexcept {
 
 // 永远不会失败，遇到不合法的配置项时静默忽略
 void AppSettings::_LoadSettings(const rapidjson::GenericObject<true, rapidjson::Value>& root) noexcept {
+	_experimentalDlssnrSettingsVersion = 0;
+	JsonHelper::ReadUInt(root, "experimentalDlssnrSettingsVersion",
+		_experimentalDlssnrSettingsVersion);
+
 	{
 		std::wstring language;
 		JsonHelper::ReadString(root, "language", language);
@@ -838,6 +847,36 @@ void AppSettings::_LoadSettings(const rapidjson::GenericObject<true, rapidjson::
 
 	[[maybe_unused]] bool result = ScalingModesService::Get().Import(root, true);
 	assert(result);
+
+	if (_experimentalDlssnrSettingsVersion < EXPERIMENTAL_DLSSNR_SETTINGS_VERSION) {
+		uint32_t migratedEffects = 0;
+		for (ScalingMode& scalingMode : _scalingModes) {
+			for (EffectItem& effect : scalingMode.effects) {
+				if (effect.name != L"DLSSNR\\DLSSNR_AI_Filter") {
+					continue;
+				}
+
+				auto it = effect.parameters.find(L"guidanceMode");
+				if (it != effect.parameters.end() &&
+					std::abs(it->second - 1.0f) < FLOAT_EPSILON<float>)
+				{
+					// v0 used Force Zero as the experimental default. v1 changes
+					// that default to Available. This migration runs only once;
+					// selecting Force Zero again after v1 remains user-owned.
+					it->second = 0.0f;
+					++migratedEffects;
+				}
+			}
+		}
+
+		Logger::Get().Info(fmt::format(
+			"DLSSNR config migration v{}->v{}: guidanceMode 1->0 for {} effect(s)",
+			_experimentalDlssnrSettingsVersion,
+			EXPERIMENTAL_DLSSNR_SETTINGS_VERSION,
+			migratedEffects));
+		_experimentalDlssnrSettingsVersion = EXPERIMENTAL_DLSSNR_SETTINGS_VERSION;
+		_isConfigMigrationNeeded = true;
+	}
 
 	auto scaleProfilesNode = root.FindMember("profiles");
 	if (scaleProfilesNode == root.MemberEnd()) {

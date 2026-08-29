@@ -154,7 +154,9 @@ bool RTXVideoDenoiser::Resize(
 	return Initialize(deviceResources, input, output, _qualityLevel);
 }
 
-bool RTXVideoDenoiser::Draw(ID3D11Texture2D* input, ID3D11Texture2D* output) noexcept {
+bool RTXVideoDenoiser::Draw(const NativeEffectDrawContext& drawContext) noexcept {
+	ID3D11Texture2D* input = drawContext.input;
+	ID3D11Texture2D* output = drawContext.output;
 	if (!_impl) {
 		return false;
 	}
@@ -238,7 +240,7 @@ bool RTXVideoDenoiser::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2
 	return false;
 }
 
-bool RTXVideoDenoiser::Draw(ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
+bool RTXVideoDenoiser::Draw(const NativeEffectDrawContext&) noexcept {
 	return false;
 }
 
