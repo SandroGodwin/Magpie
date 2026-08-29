@@ -1,7 +1,7 @@
 # DLSSNR 参数与性能短期 TODO
 
 > 创建时间：2026-08-29（Asia/Shanghai）
-> 分支：`experimental/dlssnr`
+> 分支：`experimental`
 > 状态：P0–P3、P5、P6 已完成并经用户实测暂未发现问题；P7 的 DLSS SR/DLSS FG 接线已实现，XeSS FG 按当前范围后置
 > 目标：先修正可见参数合同与 Indicator 位置，再隔离并消除主要帧时间尖峰。
 

@@ -1,7 +1,7 @@
 # DLSSNR 性能与可观测性 TODO
 
 > 创建时间：2026-08-29（Asia/Shanghai）
-> 分支：`experimental/dlssnr`
+> 分支：`experimental`
 > 来源：首次阶段 2–4 GPU 测试反馈
 > 状态：P1–P3 与 Signed Snippet 主路径已实现；启用/禁用 Release x64 Core 构建及启用态完整应用重链接通过，待 GPU 运行时验收
 

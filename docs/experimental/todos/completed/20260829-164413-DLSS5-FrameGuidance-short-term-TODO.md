@@ -1,7 +1,7 @@
 # DLSS5 Frame Guidance 短期 TODO
 
 > 创建时间：2026-08-29 16:44:13（Asia/Shanghai）
-> 分支：`experimental/dlssnr`
+> 原执行分支：`experimental/dlssnr`（已合并至 `experimental`）
 > 状态：阶段 1–4 工程实现完成；启用/禁用实验 Provider 的 Release x64 构建均通过，待 GPU 运行时验收
 > 后续：性能、pass-through 和 DLSSNR 可观测性转入 [`20260829-DLSSNR-performance-observability-TODO.md`](../20260829-DLSSNR-performance-observability-TODO.md)
 
