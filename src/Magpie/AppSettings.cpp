@@ -1270,7 +1270,7 @@ bool AppSettings::_SetDefaultShortcuts() noexcept {
 }
 
 void AppSettings::_SetDefaultScalingModes() noexcept {
-	_scalingModes.resize(12);
+	_scalingModes.resize(7);
 
 	// Lanczos
 	{
@@ -1294,92 +1294,48 @@ void AppSettings::_SetDefaultScalingModes() noexcept {
 		rcas.name = L"FSR\\FSR_RCAS";
 		rcas.parameters[L"sharpness"] = 0.87f;
 	}
-	// FSRCNNX
-	{
-		auto& fsrcnnx = _scalingModes[2];
-		fsrcnnx.name = L"FSRCNNX";
-		fsrcnnx.effects.emplace_back().name = L"FSRCNNX\\FSRCNNX";
-	}
-	// CuNNy
-	{
-		auto& acnet = _scalingModes[3];
-		acnet.name = L"CuNNy";
-		acnet.effects.emplace_back().name = L"CuNNy2\\CuNNy-4x12-NVL";
-	}
-	// Anime4K
-	{
-		auto& anime4k = _scalingModes[4];
-		anime4k.name = L"Anime4K";
-		anime4k.effects.emplace_back().name = L"Anime4K\\Anime4K_Upscale_Denoise_L";
-	}
-	// CRT-Geom
-	{
-		auto& crtGeom = _scalingModes[5];
-		crtGeom.name = L"CRT-Geom";
-
-		auto& crtGeomEffect = crtGeom.effects.emplace_back();
-		crtGeomEffect.name = L"CRT\\CRT_Geom";
-		crtGeomEffect.scalingType = ::Magpie::ScalingType::Fit;
-		crtGeomEffect.parameters[L"curvature"] = 0.0f;
-		crtGeomEffect.parameters[L"cornerSize"] = 0.001f;
-		crtGeomEffect.parameters[L"CRTGamma"] = 1.5f;
-		crtGeomEffect.parameters[L"monitorGamma"] = 2.2f;
-		crtGeomEffect.parameters[L"interlace"] = 0.0f;
-	}
-	// Integer Scale 2x
-	{
-		auto& integer2x = _scalingModes[6];
-		integer2x.name = L"Integer Scale 2x";
-
-		auto& nearest = integer2x.effects.emplace_back();
-		nearest.name = L"Nearest";
-		nearest.scalingType = ::Magpie::ScalingType::Normal;
-		nearest.scale = { 2.0f,2.0f };
-	}
 	// DLSS SR
 	{
-		auto& dlssSr = _scalingModes[7];
+		auto& dlssSr = _scalingModes[2];
 		dlssSr.name = L"DLSS SR";
 
 		auto& effect = dlssSr.effects.emplace_back();
 		effect.name = L"DLSS\\DLSS_SR";
 		effect.scalingType = ::Magpie::ScalingType::Fit;
 	}
-	// DLSS Jitter
-	{
-		auto& dlssJitter = _scalingModes[8];
-		dlssJitter.name = L"DLSS Jitter";
-
-		auto& effect = dlssJitter.effects.emplace_back();
-		effect.name = L"DLSS\\DLSS_ZeroMV_Jitter";
-		effect.scalingType = ::Magpie::ScalingType::Fit;
-	}
-	// FSR2 Zero-MV
-	{
-		auto& fsr2ZeroMV = _scalingModes[9];
-		fsr2ZeroMV.name = L"FSR2 Zero-MV";
-
-		auto& effect = fsr2ZeroMV.effects.emplace_back();
-		effect.name = L"FSR2\\FSR2_ZeroMV";
-		effect.scalingType = ::Magpie::ScalingType::Fit;
-	}
-	// RTX Video VSR High
-	{
-		auto& vsrHigh = _scalingModes[10];
-		vsrHigh.name = L"RTX Video VSR High";
-
-		auto& effect = vsrHigh.effects.emplace_back();
-		effect.name = L"RTXVideo\\RTXVideo_VSR_High";
-		effect.scalingType = ::Magpie::ScalingType::Fit;
-	}
 	// RTX Video VSR Ultra
 	{
-		auto& vsrUltra = _scalingModes[11];
+		auto& vsrUltra = _scalingModes[3];
 		vsrUltra.name = L"RTX Video VSR Ultra";
-
-		auto& effect = vsrUltra.effects.emplace_back();
-		effect.name = L"RTXVideo\\RTXVideo_VSR_Ultra";
-		effect.scalingType = ::Magpie::ScalingType::Fit;
+		vsrUltra.effects.resize(2);
+		vsrUltra.effects[0].name = L"FrameRate_Filter";
+		auto& vsrEffect = vsrUltra.effects[1];
+		vsrEffect.name = L"RTXVideo\\RTXVideo_VSR_Ultra";
+		vsrEffect.scalingType = ::Magpie::ScalingType::Fit;
+	}
+	// DLSS Frame Generation
+	{
+		auto& dlssFg = _scalingModes[4];
+		dlssFg.name = L"DLSSFG";
+		dlssFg.effects.resize(2);
+		dlssFg.effects[0].name = L"FrameRate_Filter";
+		dlssFg.effects[1].name = L"DLSSFG\\DLSS_FrameGeneration";
+	}
+	// XeSS Frame Generation
+	{
+		auto& xessFg = _scalingModes[5];
+		xessFg.name = L"XeSSFG";
+		xessFg.effects.resize(2);
+		xessFg.effects[0].name = L"FrameRate_Filter";
+		xessFg.effects[1].name = L"XeSSFG\\XeSS_FrameGeneration_x2_ZeroMV";
+	}
+	// DLSS Ray Reconstruction
+	{
+		auto& dlssNr = _scalingModes[6];
+		dlssNr.name = L"DLSSNR";
+		dlssNr.effects.resize(2);
+		dlssNr.effects[0].name = L"FrameRate_Filter";
+		dlssNr.effects[1].name = L"DLSSNR\\DLSSNR_AI_Filter";
 	}
 
 	// 全局缩放模式默认为 Lanczos
