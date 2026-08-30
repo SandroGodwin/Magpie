@@ -4,6 +4,7 @@
 
 ## 当前工作
 
+- [DLSS 组合兼容性短期 TODO](todos/20260830-DLSS-combination-compatibility-short-term-TODO.md)：修复 SR→NR 跨尺寸 Guidance、统一 NR/FG 的 NGX D3D12 Core 生命周期、迁移 `DLSS_SR` 标识并补齐 x2/x3/x4 诊断。
 - [DLSSNR 参数与性能短期 TODO](todos/20260829-DLSSNR-parameters-performance-short-term-TODO.md)：修正 Indicator/参数合同，跟踪异步 DAV2、四槽 bridge 与 GPU 验收。
 - [DLSSNR 性能与可观测性 TODO](todos/20260829-DLSSNR-performance-observability-TODO.md)：处理严重卡顿、pass-through 仍运行 Guidance、DLSS Indicator 不可靠和 DAV2 同步瓶颈。
 - [Frame Guidance 测试矩阵](testing/FRAME_GUIDANCE-TEST-MATRIX.md)：统一记录诊断视图、四组 Guidance、场景、性能和日志证据。
@@ -14,6 +15,7 @@
 
 ## 交接、发布与授权
 
+- [实验分支 Git 工作流](GIT-WORKFLOW.md)
 - [实验分支交接](../EXPERIMENTAL_HANDOFF_ZH.md)
 - [下一版 Release Notes](../RELEASE_NOTES_NEXT.md)
 - [v0.5.6 实验版说明](../RELEASE_NOTES_v0.5.6-experimental.md)

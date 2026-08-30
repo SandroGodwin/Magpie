@@ -6,6 +6,14 @@
 .conan/
 my_*/
 
+# Third-party runtime binaries and local experimental inputs are distributed
+# through release assets or restored from dependencies; they are not source.
+*.dll
+*.exe
+*.lib
+*.onnx
+*.addon64
+
 # User-specific files
 *.rsuser
 *.suo
