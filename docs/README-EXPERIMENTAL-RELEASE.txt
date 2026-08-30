@@ -1,101 +1,53 @@
-Magpie 0.5.6 experimental x64 build
+Magpie Experimental v0.5.7 x64
 
-This directory is updated in place. The ZIP name remains stable across builds.
-Built-in update checking is temporarily disabled in 0.5.3-experimental.
+安装 / Installation
 
-DLSSNR runtime note: this package uses a community-modified nvngx_dlssnr.dll
-version 310.8.0.0 intended for RTX 40-series and RTX 50-series testing. Because
-the file is binary-patched, Windows reports an Authenticode hash mismatch; use
-it only for this experimental test build.
+1. 完全退出正在运行的 Magpie。
+2. 将 ZIP 完整解压到新目录，不要在压缩包内直接运行，也不要只复制 Magpie.exe。
+3. 运行 Magpie.exe。旧版本设置通常会从 LocalAppData 自动读取并迁移。
 
-Experimental effects:
-- DLSS SR_Experimental (DLSS\DLSS_SR; old profiles migrate automatically)
-- DLSS_ZeroMV_Jitter and the legacy DLSS_OpticalFlow alias
-- DLSSNR\DLSSNR_AI_Filter (same-resolution SDR AI filter)
-- Diagnostics\FrameGuidance_Motion, FrameGuidance_Confidence,
-  FrameGuidance_Depth, FrameGuidance_DepthResidual
-- FSR2\FSR2_ZeroMV, FSR2_OpticalFlow
-- FSR3\FSR3_ZeroMV, FSR3_OpticalFlow (upscaler only; no frame generation)
-- XeSS\XeSS_ZeroMV, XeSS_OpticalFlow
-- RTXVideo denoise and VSR quality levels
-- DLSS FG_Experimental 2x/3x/4x (do not combine with Smooth Motion)
-- XeSSFG cross-vendor x2 frame generation and Intel Arc x2/x3/x4
-  multi-frame generation (do not combine with Smooth Motion)
+Fully exit Magpie, extract the complete ZIP into a new directory, and run
+Magpie.exe. Do not run from inside the archive or copy only the executable.
 
-XeSS uses the cross-vendor XeSS 3.0.1 D3D12 DP4a path through D3D11/D3D12
-shared resources. XeSS_OpticalFlow estimates motion on a 50% grid and supplies
-low-resolution motion vectors plus flat depth. XeSS_ZeroMV explicitly supplies
-zero motion vectors plus flat depth. It does not use the Intel Arc-only native
-D3D11 path.
+主要实验效果 / Main experimental effects
 
-These integrations still do not have engine depth, engine motion vectors,
-reactive masks, camera matrices, or projection jitter. DLSS SR_Experimental and
-DLSS FG_Experimental can instead consume Renderer-owned NVIDIA Optical Flow and
-Depth Anything V2 estimated depth. These inputs are experimental and may still
-produce ghosting or unstable detail. See logs\magpie.log when reporting errors.
+- DLSS SR_Experimental：Motion 默认开启，Estimated Depth 默认关闭。
+- DLSS FG_Experimental：支持 x2/x3/x4；不要与其他帧生成方案同时使用。
+- DLSSNR AI Filter：同分辨率 SDR 滤镜，不负责放大，HDR 暂不支持。
+- XeSS FG：通用显卡 x2 Zero-MV 路径。
+- RTX Video VSR：面向视频、视觉小说和压缩画面增强。
 
-DLSS SR_Experimental usage:
-- Use Motion Vectors defaults to On. It supplies current-to-previous optical
-  flow in source-pixel units.
-- Use Estimated Depth defaults to Off. Enabling it also runs optical flow
-  internally to stabilize depth, even if motion-vector delivery is disabled.
-- Real guidance is used only when the DLSS input and captured source dimensions
-  match. Any unavailable or incompatible channel safely falls back to Zero.
-- The Jitter effect remains a separate legacy experiment and does not use this
-  new guidance path.
+The captured-frame Motion and Depth inputs are estimates, not engine-native
+data. Visual quality and stability are not equivalent to an in-game DLSS
+integration.
 
-DLSS FG_Experimental usage:
-- Select x2, x3, or x4 with Frame Multiplier, subject to GPU/driver support.
-- Use Motion Vectors defaults to On; Use Estimated Depth defaults to Off.
-- Final effect-chain colour remains at backbuffer resolution. Motion and depth
-  remain at captured-source resolution and are synchronized into D3D12 with the
-  same captured base-frame ID.
-- Do not combine DLSS FG with Smooth Motion or another frame generator.
+DLSSNR 参数建议 / DLSSNR defaults
 
-DLSSNR uses the bundled nvngx_dlssnr.dll Feature 18 exports through D3D12 and consumes one Renderer-owned Frame
-Guidance group. NVIDIA Optical Flow supplies current-to-previous source-pixel
-motion plus confidence. Depth Anything V2 Small supplies normalized inverse
-relative depth through TensorRT FP16, with ONNX Runtime DirectML as hot standby.
-Any missing or failed provider falls back to the coherent Zero group without
-stopping rendering. The Effect's Guidance Mode selects Available, Force Zero,
-Motion Only, or Depth Only for A/B testing. It does not upscale and the current
-experiment does not support HDR. NGX Core only allocates and destroys the
-parameter block; Core CreateFeature(18) is not a prerequisite.
+- NR Preset: 0 Default
+- NR Style: 0 Default
+- NR Intensity / Local Tone / Local Structure: 1
+- Skin Structure Strength: -1
+- Automatic Mask / NR UI Correction: Off
+- Frame Guidance: 0 Available
+- Depth Inference Interval: 4
 
-Provider execution is demand-driven. For the DLSS SR/FG switches, estimated
-depth may request NVOF internally for temporal stabilization even when real
-motion vectors are not bound to the SDK. Depth Inference Interval defaults to
-4; intervening real frames reproject the prior filtered depth. Search
-logs\magpie.log for
-"DLSSNR STATUS" to verify Feature 18 creation and Evaluate results independently
-of NVIDIA's optional on-screen Indicator.
+DLSSNR DLL
 
-TensorRT requires a compatible local CUDA/cuDNN installation. Engines are built
-and cached under LocalAppData for this GPU/model/input configuration and are not
-part of this directory. NVIDIA's nvofapi64.dll is loaded from the installed
-display driver and is not distributed here. Consult logs\magpie.log to confirm
-the selected depth backend, model hash, NVOF grid, reset, and fallback reason.
+This package uses the community-modified nvngx_dlssnr.dll 310.8.0.0 intended
+for RTX 40-series and RTX 50-series compatibility. Windows Authenticode reports
+a file-hash mismatch because the binary is modified. The separate
+DLSSNR-DLL-Options-310.8.0.0.zip Release asset also contains the original
+NVIDIA-signed runtime.
 
-DLSSFG keeps CPU/GPU fence synchronization. Guidance binding logs distinguish
-requested, produced, bound, and Zero-fallback channels. Repeated evaluation failures fall
-back to real captured frames and disable frame generation for that scaling
-session instead of retrying forever.
+排错 / Troubleshooting
 
-Frame Generation now forces exact captured-frame duplicate filtering and no
-longer synthesizes repeated base frames to satisfy Magpie's minimum-FPS timer.
-XeSSFG also ignores frontend presents caused only by the software cursor or
-overlay, preventing mouse movement from inflating the SDK input frame rate.
-
-Smooth Motion compatibility restarts preserve window, minimized, or tray state,
-release shortcuts before replacement, and wait for the old process to exit.
-
-Native upscalers and RTX Video are dispatched through NativeEffectBackend and
-NativeEffectBackendFactory. Frame-generation presenters remain terminal stages.
-
-This package includes build-manifest.json and THIRD-PARTY-NOTICES.md. The
-manifest identifies the source commit, enabled optional backends, and hashes of
-the packaged files. Third-party redistribution and GPL compatibility must be
-reviewed before publishing a binary package.
+- 日志位于 logs\magpie.log。
+- 搜索 DLSSNR STATUS 确认 DLSSNR 创建和执行状态。
+- NVIDIA Indicator 不保证在所有环境显示。
+- 报告问题时请附上版本、GPU、驱动、效果链、分辨率和日志。
 
 Source fork: https://github.com/SAOG0721/Magpie
 Upstream: https://github.com/Blinue/Magpie
+
+This package includes build-manifest.json, LICENSE-Magpie.txt, and
+THIRD-PARTY-NOTICES.md.
