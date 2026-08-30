@@ -1,10 +1,10 @@
 #include "pch.h"
-#include "DLSSZeroMVUpscaler.h"
+#include "DLSSSRUpscaler.h"
 #include "DeviceResources.h"
 #include "DirectXHelper.h"
 #include "Logger.h"
 
-#ifdef MP_ENABLE_DLSS_ZEROMV
+#ifdef MP_ENABLE_DLSS_SR
 #include <nvsdk_ngx.h>
 #include <nvsdk_ngx_helpers.h>
 
@@ -14,11 +14,11 @@ static bool NGXSucceeded(NVSDK_NGX_Result result) noexcept {
 	return NVSDK_NGX_SUCCEED(result);
 }
 
-DLSSZeroMVUpscaler::~DLSSZeroMVUpscaler() {
+DLSSSRUpscaler::~DLSSSRUpscaler() {
 	_Reset();
 }
 
-void DLSSZeroMVUpscaler::_Reset() noexcept {
+void DLSSSRUpscaler::_Reset() noexcept {
 	if (_feature) {
 		NVSDK_NGX_D3D11_ReleaseFeature(static_cast<NVSDK_NGX_Handle*>(_feature));
 		_feature = nullptr;
@@ -48,7 +48,7 @@ void DLSSZeroMVUpscaler::_Reset() noexcept {
 		std::numeric_limits<FrameGuidanceFrameId>::max();
 }
 
-bool DLSSZeroMVUpscaler::Initialize(
+bool DLSSSRUpscaler::Initialize(
 	DeviceResources& deviceResources,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output,
@@ -64,7 +64,7 @@ bool DLSSZeroMVUpscaler::Initialize(
 	input->GetDesc(&inputDesc);
 	output->GetDesc(&outputDesc);
 	if (inputDesc.Width > outputDesc.Width || inputDesc.Height > outputDesc.Height) {
-		Logger::Get().Error("DLSS Zero-MV only supports upscaling");
+		Logger::Get().Error("DLSS SR only supports upscaling");
 		_Reset();
 		return false;
 	}
@@ -91,7 +91,7 @@ bool DLSSZeroMVUpscaler::Initialize(
 		D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS
 	);
 	if (!_zeroMotionVectors || !_zeroDepth || !_biasCurrentColorMask) {
-		Logger::Get().Error("Create DLSS Zero-MV auxiliary textures failed");
+		Logger::Get().Error("Create DLSS SR auxiliary textures failed");
 		_Reset();
 		return false;
 	}
@@ -106,7 +106,7 @@ bool DLSSZeroMVUpscaler::Initialize(
 			_biasCurrentColorMask.get(), nullptr, _biasCurrentColorMaskUav.put());
 	}
 	if (FAILED(hr)) {
-		Logger::Get().ComError("Create DLSS Zero-MV UAV failed", hr);
+		Logger::Get().ComError("Create DLSS SR UAV failed", hr);
 		_Reset();
 		return false;
 	}
@@ -116,7 +116,7 @@ bool DLSSZeroMVUpscaler::Initialize(
 	NVSDK_NGX_Result result = NVSDK_NGX_D3D11_Init_with_ProjectID(
 		"7c134ab9-9677-4af5-a2b2-bca943350861",
 		NVSDK_NGX_ENGINE_TYPE_CUSTOM,
-		"Magpie-ZeroMV-1",
+		"Magpie-DLSS-SR-2",
 		L"logs",
 		_device
 	);
@@ -179,7 +179,7 @@ bool DLSSZeroMVUpscaler::Initialize(
 }
 
 FrameGuidanceRequirements
-DLSSZeroMVUpscaler::GetFrameGuidanceRequirements() const noexcept {
+DLSSSRUpscaler::GetFrameGuidanceRequirements() const noexcept {
 	FrameGuidanceRequirements result{ .zero = true };
 	// Estimated depth uses motion internally for temporal reprojection even
 	// when the user chooses not to bind motion to DLSS SR.
@@ -188,7 +188,7 @@ DLSSZeroMVUpscaler::GetFrameGuidanceRequirements() const noexcept {
 	return result;
 }
 
-bool DLSSZeroMVUpscaler::Resize(
+bool DLSSSRUpscaler::Resize(
 	DeviceResources& deviceResources,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output
@@ -208,7 +208,7 @@ static float Halton(uint32_t index, uint32_t base) noexcept {
 	return result;
 }
 
-bool DLSSZeroMVUpscaler::Draw(const NativeEffectDrawContext& context) noexcept {
+bool DLSSSRUpscaler::Draw(const NativeEffectDrawContext& context) noexcept {
 	ID3D11Texture2D* input = context.input;
 	ID3D11Texture2D* output = context.output;
 	if (!_feature || !_parameters || !_zeroMotionVectorsUav || !_zeroDepthUav ||
@@ -333,24 +333,24 @@ bool DLSSZeroMVUpscaler::Draw(const NativeEffectDrawContext& context) noexcept {
 
 namespace Magpie {
 
-DLSSZeroMVUpscaler::~DLSSZeroMVUpscaler() = default;
-void DLSSZeroMVUpscaler::_Reset() noexcept {}
+DLSSSRUpscaler::~DLSSSRUpscaler() = default;
+void DLSSSRUpscaler::_Reset() noexcept {}
 
-bool DLSSZeroMVUpscaler::Initialize(
+bool DLSSSRUpscaler::Initialize(
 	DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*,
 	const DLSSSRSettings&) noexcept {
-	Logger::Get().Error("DLSS Zero-MV is disabled at build time");
+	Logger::Get().Error("DLSS SR is disabled at build time");
 	return false;
 }
 
 FrameGuidanceRequirements
-DLSSZeroMVUpscaler::GetFrameGuidanceRequirements() const noexcept { return {}; }
+DLSSSRUpscaler::GetFrameGuidanceRequirements() const noexcept { return {}; }
 
-bool DLSSZeroMVUpscaler::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
+bool DLSSSRUpscaler::Resize(DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
 	return false;
 }
 
-bool DLSSZeroMVUpscaler::Draw(const NativeEffectDrawContext&) noexcept {
+bool DLSSSRUpscaler::Draw(const NativeEffectDrawContext&) noexcept {
 	return false;
 }
 

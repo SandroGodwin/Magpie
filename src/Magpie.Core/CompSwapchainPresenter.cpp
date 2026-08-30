@@ -226,7 +226,7 @@ bool CompSwapchainPresenter::BeginFrame(
 	return true;
 }
 
-void CompSwapchainPresenter::EndFrame(bool waitForGpu) noexcept {
+bool CompSwapchainPresenter::EndFrame(bool waitForGpu) noexcept {
 	if (waitForGpu || _isResized) {
 		// 下面两个调用用于减少调整窗口尺寸时的边缘闪烁，参见 AdaptivePresenter::EndFrame
 
@@ -245,6 +245,8 @@ void CompSwapchainPresenter::EndFrame(bool waitForGpu) noexcept {
 		// 确保前一帧渲染完成再渲染下一帧，既降低了 GPU 负载，也能降低延迟
 		_WaitForGpu();
 	}
+
+	return true;
 }
 
 bool CompSwapchainPresenter::OnResize() noexcept {

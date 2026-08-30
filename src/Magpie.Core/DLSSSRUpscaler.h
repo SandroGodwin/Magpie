@@ -13,12 +13,12 @@ struct DLSSSRSettings {
 
 // Experimental DLSS-SR adapter for captured colour frames. The non-jitter
 // path can consume Renderer-owned optical flow and estimated inverse depth.
-class DLSSZeroMVUpscaler final : public NativeEffectBackend {
+class DLSSSRUpscaler final : public NativeEffectBackend {
 public:
-	DLSSZeroMVUpscaler() = default;
-	DLSSZeroMVUpscaler(const DLSSZeroMVUpscaler&) = delete;
-	DLSSZeroMVUpscaler& operator=(const DLSSZeroMVUpscaler&) = delete;
-	~DLSSZeroMVUpscaler() override;
+	DLSSSRUpscaler() = default;
+	DLSSSRUpscaler(const DLSSSRUpscaler&) = delete;
+	DLSSSRUpscaler& operator=(const DLSSSRUpscaler&) = delete;
+	~DLSSSRUpscaler() override;
 
 	bool Initialize(
 		DeviceResources& deviceResources,

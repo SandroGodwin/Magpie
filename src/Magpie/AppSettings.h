@@ -30,7 +30,8 @@ struct _AppSettingsData {
 	std::filesystem::path _configPath;
 	// Experimental DLSSNR parameter migrations are versioned independently from
 	// the main configuration folder so one-time default changes do not repeat.
-	uint32_t _experimentalDlssnrSettingsVersion = 1;
+	uint32_t _experimentalDlssnrSettingsVersion = 2;
+	uint32_t _experimentalDlssSrSettingsVersion = 1;
 
 	// LocalizationService::SupportedLanguages 索引
 	// -1 表示使用系统设置

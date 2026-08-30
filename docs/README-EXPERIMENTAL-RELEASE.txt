@@ -9,7 +9,7 @@ the file is binary-patched, Windows reports an Authenticode hash mismatch; use
 it only for this experimental test build.
 
 Experimental effects:
-- DLSS SR_Experimental (stored as DLSS\DLSS_ZeroMV for profile compatibility)
+- DLSS SR_Experimental (DLSS\DLSS_SR; old profiles migrate automatically)
 - DLSS_ZeroMV_Jitter and the legacy DLSS_OpticalFlow alias
 - DLSSNR\DLSSNR_AI_Filter (same-resolution SDR AI filter)
 - Diagnostics\FrameGuidance_Motion, FrameGuidance_Confidence,

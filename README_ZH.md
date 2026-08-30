@@ -44,7 +44,7 @@ Fork 维护者使用 OpenAI Codex 辅助开发和测试了以下基于捕获帧�
 
 #### DLSS Super Resolution
 
-`DLSS SR_Experimental` 为兼容旧配置继续使用内部标识 `DLSS_ZeroMV`，但提供两个独立输入。`Use Motion Vectors` 默认开启，输入当前帧到上一帧、以源像素为单位的光流；`Use Estimated Depth` 默认关闭，输入归一化逆相对深度。即使不向 DLSS 传递运动信息，估算深度仍可在内部使用光流做时域稳定。只有 DLSS 输入尺寸与捕获源一致时才绑定真实 Guidance，否则安全回退 Zero。
+`DLSS SR_Experimental` 使用 `DLSS_SR` 效果标识，并提供两个独立输入。`Use Motion Vectors` 默认开启，输入当前帧到上一帧、以源像素为单位的光流；`Use Estimated Depth` 默认关闭，输入归一化逆相对深度。即使不向 DLSS 传递运动信息，估算深度仍可在内部使用光流做时域稳定。当前置 SR 阶段改变消费者尺寸时，共享 Guidance 会重采样到该尺寸，而不再被丢弃。
 
 | Effect | 实测优点 | 实测缺点 | 推荐结论 |
 | --- | --- | --- | --- |

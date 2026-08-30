@@ -5,9 +5,17 @@ namespace Magpie {
 
 class DeviceResources;
 
+struct FrameGuidanceConsumerViews {
+	FrameGuidanceView produced{};
+	FrameGuidanceView zero{};
+	bool adapted = false;
+	bool usedFallback = false;
+};
+
 class FrameGuidanceService {
 public:
 	FrameGuidanceService() noexcept;
+	~FrameGuidanceService();
 	FrameGuidanceService(const FrameGuidanceService&) = delete;
 	FrameGuidanceService& operator=(const FrameGuidanceService&) = delete;
 	bool SetDepthProvider(std::unique_ptr<IDepthProvider> provider) noexcept;
@@ -31,6 +39,10 @@ public:
 		const FrameGuidanceRequirements& requirements
 	) noexcept;
 	void ResetHistory(FrameGuidanceResetReason reason) noexcept;
+	FrameGuidanceConsumerViews GetConsumerViews(
+		FrameGuidanceFrameId frameId,
+		FrameGuidanceExtent targetExtent
+	) noexcept;
 
 	const FrameGuidanceView& View() const noexcept { return _view; }
 	const FrameGuidanceView& ZeroView() const noexcept { return _zeroView; }
@@ -38,6 +50,8 @@ public:
 	bool IsInitialized() const noexcept { return _resources != nullptr; }
 
 private:
+	struct AdapterCache;
+
 	const FrameGuidanceView& _Produce(
 		const FrameGuidanceFrame& frame,
 		const FrameGuidanceRequirements& requirements
@@ -59,6 +73,7 @@ private:
 	bool _hasLoggedRequirements = false;
 	bool _depthProviderReady = false;
 	bool _motionProviderReady = false;
+	std::unique_ptr<AdapterCache> _adapterCache;
 };
 
 }

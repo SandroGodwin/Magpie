@@ -59,8 +59,15 @@ commitId = str(p.stdout, encoding="utf-8")[0:-1]
 versionNumProps = f";MajorVersion={args.version_major};MinorVersion={args.version_minor};PatchVersion={args.version_patch}"
 versionStrProp = "" if args.version_string == "" else f";VersionString={args.version_string}"
 
+msbuildProperties = (
+    f"-p:RestorePackagesConfig=true;Configuration=Release;Platform={args.platform};"
+    f"DisablePDB=true;UseClangCL={args.compiler == 'ClangCL'};"
+    f"UseNativeMicroArch={args.use_native_march};"
+    f"OutDir={os.getcwd()}\\publish\\{args.platform}\\;"
+    f"CommitId={commitId}{versionNumProps}{versionStrProp}"
+)
 p = subprocess.run(
-    f'"{msbuildPath}" Magpie.slnx -m -t:Rebuild -restore -p:RestorePackagesConfig=true;Configuration=Release;Platform={args.platform};DisablePDB=true;UseClangCL={args.compiler == "ClangCL"};UseNativeMicroArch={args.use_native_march};OutDir={os.getcwd()}\\publish\\{args.platform}\\;CommitId={commitId}{versionNumProps}{versionStrProp}'
+    [msbuildPath, "Magpie.slnx", "-m", "-t:Rebuild", "-restore", msbuildProperties]
 )
 if p.returncode != 0:
     raise Exception("编译失败")
@@ -84,6 +91,14 @@ def remove_file(file):
 
 for file in glob.glob("*.lib"):
     remove_file(file)
+
+# The v0.5.7 effect identifier is DLSS\DLSS_SR. Rebuilds into an existing
+# output directory must not retain the removed v0.5.6 main-effect file.
+remove_file(os.path.join("effects", "DLSS", "DLSS_ZeroMV.hlsl"))
+if args.platform == "x64" and not os.path.isfile(
+    os.path.join("effects", "DLSS", "DLSS_SR.hlsl")
+):
+    raise Exception("缺少 DLSS_SR 效果文件")
 
 print("清理完毕", flush=True)
 

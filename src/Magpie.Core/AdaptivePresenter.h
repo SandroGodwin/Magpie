@@ -18,7 +18,11 @@ public:
 		POINT& drawOffset
 	) noexcept override;
 
-	void EndFrame(bool waitForGpu = false) noexcept override;
+	bool EndFrame(bool waitForGpu = false) noexcept override;
+
+	bool UsesFrameLatencyWaitableObject() const noexcept override {
+		return !_isDCompPresenting && !!_frameLatencyWaitableObject;
+	}
 
 	bool OnResize() noexcept override;
 
@@ -44,6 +48,9 @@ private:
 	bool _isResized = false;
 	bool _isframeLatencyWaited = false;
 	bool _isSwitchingToSwapChain = false;
+	uint32_t _frameLatencyWaitTimeoutCount = 0;
+	uint32_t _presentOccludedCount = 0;
+	uint32_t _presentFailureCount = 0;
 };
 
 }

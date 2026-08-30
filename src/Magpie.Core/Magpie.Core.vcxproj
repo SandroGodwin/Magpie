@@ -86,7 +86,7 @@
     <ClInclude Include="XeSSFGPresenter.h" />
     <ClInclude Include="TextureHelper.h" />
     <ClInclude Include="YasHelper.h" />
-    <ClInclude Include="DLSSZeroMVUpscaler.h" />
+    <ClInclude Include="DLSSSRUpscaler.h" />
     <ClInclude Include="DLSSFrameGenerator.h" />
     <ClInclude Include="DLSSNRFilter.h" />
     <ClInclude Include="FrameGuidanceProvider.h" />
@@ -105,6 +105,7 @@
     <ClInclude Include="HalfResOpticalFlow.h" />
     <ClInclude Include="NativeEffectBackend.h" />
     <ClInclude Include="NativeEffectBackendFactory.h" />
+    <ClInclude Include="NgxD3D12Core.h" />
     <ClInclude Include="RTXVideoDenoiser.h" />
   </ItemGroup>
   <ItemGroup>
@@ -146,7 +147,7 @@
     <ClCompile Include="TextureHelper.cpp" />
     <ClCompile Include="Win32Helper.cpp" />
     <ClCompile Include="WindowHelper.cpp" />
-    <ClCompile Include="DLSSZeroMVUpscaler.cpp" />
+    <ClCompile Include="DLSSSRUpscaler.cpp" />
     <ClCompile Include="DLSSFrameGenerator.cpp" />
     <ClCompile Include="DLSSNRFilter.cpp" />
     <ClCompile Include="FrameGuidanceService.cpp" />
@@ -161,6 +162,7 @@
     <ClCompile Include="XeSSZeroMVUpscaler.cpp" />
     <ClCompile Include="HalfResOpticalFlow.cpp" />
     <ClCompile Include="NativeEffectBackendFactory.cpp" />
+    <ClCompile Include="NgxD3D12Core.cpp" />
     <ClCompile Include="RTXVideoDenoiser.cpp" />
     <ClCompile Include="$(VFXSdkDir)\nvvfx\src\NVVideoEffectsProxy.cpp" Condition="$(EnableRTXVideoDenoise) And '$(Platform)' == 'x64'">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

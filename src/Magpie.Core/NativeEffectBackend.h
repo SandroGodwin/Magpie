@@ -23,6 +23,7 @@ public:
 	virtual FrameGuidanceRequirements GetFrameGuidanceRequirements() const noexcept {
 		return {};
 	}
+	virtual bool Drain() noexcept { return true; }
 
 	virtual bool Resize(
 		DeviceResources& resources,

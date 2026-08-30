@@ -6,6 +6,14 @@
 //!SORT_NAME DLSSNR AI Filter (Experimental)
 
 //!PARAMETER
+//!LABEL NR Preset (0 Default, 1 Preset #1, 2 Preset #2, 3 Preset #3)
+//!DEFAULT 0
+//!MIN 0
+//!MAX 3
+//!STEP 1
+int nrPreset;
+
+//!PARAMETER
 //!LABEL NR Style (0 Default, 1 Natural, 2 Cinematic)
 //!DEFAULT 0
 //!MIN 0
@@ -17,7 +25,7 @@ int style;
 //!LABEL NR Intensity
 //!DEFAULT 1
 //!MIN 0
-//!MAX 1
+//!MAX 2
 //!STEP 0.05
 float intensity;
 
@@ -25,7 +33,7 @@ float intensity;
 //!LABEL Local Tone Strength
 //!DEFAULT 1
 //!MIN 0
-//!MAX 1
+//!MAX 2
 //!STEP 0.05
 float localToneStrength;
 
@@ -33,9 +41,17 @@ float localToneStrength;
 //!LABEL Local Structure Strength
 //!DEFAULT 1
 //!MIN 0
-//!MAX 1
+//!MAX 2
 //!STEP 0.05
 float localStructureStrength;
+
+//!PARAMETER
+//!LABEL Skin Structure Strength
+//!DEFAULT -1
+//!MIN -1
+//!MAX 2
+//!STEP 0.05
+float skinStructureStrength;
 
 //!PARAMETER
 //!LABEL Automatic Mask
@@ -44,6 +60,14 @@ float localStructureStrength;
 //!MAX 1
 //!STEP 1
 int useAutoMask;
+
+//!PARAMETER
+//!LABEL NR UI Correction
+//!DEFAULT 0
+//!MIN 0
+//!MAX 1
+//!STEP 1
+int uiCorrection;
 
 //!PARAMETER
 //!LABEL Frame Guidance (0 Available, 1 Force Zero, 2 Motion Only, 3 Depth Only)

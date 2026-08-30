@@ -15,8 +15,8 @@
       <PreprocessorDefinitions Condition="$(DebugBorder)">MP_DEBUG_BORDER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="$(DebugInfoOnOverlay)">MP_DEBUG_INFO_ON_OVERLAY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="$(UseCompSwapchain)">MP_USE_COMPSWAPCHAIN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="$(EnableDLSSZeroMV) And '$(Platform)' == 'x64'">MP_ENABLE_DLSS_ZEROMV;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories Condition="$(EnableDLSSZeroMV) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions Condition="$(EnableDLSSSR) And '$(Platform)' == 'x64'">MP_ENABLE_DLSS_SR;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories Condition="$(EnableDLSSSR) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">MP_ENABLE_DLSS_FRAME_GENERATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories Condition="$(EnableDLSSFrameGeneration) And '$(Platform)' == 'x64'">$(DLSSSdkDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="$(EnableDLSSNR) And '$(Platform)' == 'x64'">MP_ENABLE_DLSSNR;%(PreprocessorDefinitions)</PreprocessorDefinitions>

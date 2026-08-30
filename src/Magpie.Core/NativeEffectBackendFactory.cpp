@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "NativeEffectBackendFactory.h"
+#include "NgxD3D12Core.h"
 #include "DLSSNRFilter.h"
-#include "DLSSZeroMVUpscaler.h"
+#include "DLSSSRUpscaler.h"
 #include "FSR2ZeroMVUpscaler.h"
 #include "FSR3ZeroMVUpscaler.h"
 #include "RTXVideoDenoiser.h"
@@ -33,6 +34,7 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 	std::string_view effectName,
 	const EffectOption& option,
 	DeviceResources& resources,
+	NgxD3D12Core& ngxCore,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output
 ) noexcept {
@@ -66,14 +68,20 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 			return it == option.parameters.end() ? defaultValue : it->second;
 		};
 		DLSSNRSettings settings{
+			.preset = std::clamp(
+				static_cast<int>(std::lround(
+					getParameter("nrPreset", 0.0f))), 0, 3),
 			.style = std::clamp(
 				static_cast<int>(std::lround(getParameter("style", 0.0f))), 0, 2),
-			.intensity = std::clamp(getParameter("intensity", 1.0f), 0.0f, 1.0f),
+			.intensity = std::clamp(getParameter("intensity", 1.0f), 0.0f, 2.0f),
 			.localToneStrength = std::clamp(
-				getParameter("localToneStrength", 1.0f), 0.0f, 1.0f),
+				getParameter("localToneStrength", 1.0f), 0.0f, 2.0f),
 			.localStructureStrength = std::clamp(
-				getParameter("localStructureStrength", 1.0f), 0.0f, 1.0f),
+				getParameter("localStructureStrength", 1.0f), 0.0f, 2.0f),
+			.skinStructureStrength = std::clamp(
+				getParameter("skinStructureStrength", -1.0f), -1.0f, 2.0f),
 			.useAutoMask = getParameter("useAutoMask", 0.0f) >= 0.5f,
+			.uiCorrection = getParameter("uiCorrection", 0.0f) >= 0.5f,
 			.guidanceMode = std::clamp(
 				static_cast<int>(std::lround(
 					getParameter("guidanceMode", 0.0f))), 0, 3),
@@ -82,7 +90,7 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 					getParameter("depthInferenceInterval", 4.0f))), 1, 8))
 		};
 		auto backend = std::make_unique<DLSSNRFilter>();
-		if (!backend->Initialize(resources, input, output, settings)) {
+		if (!backend->Initialize(resources, ngxCore, input, output, settings)) {
 			const char status[] =
 				"DLSSNR STATUS: Feature=18 created=false path=unavailable "
 				"fallback=pass-through\n";
@@ -93,7 +101,8 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 		return { true, std::move(backend) };
 	}
 
-	if (effectName == "DLSS\\DLSS_ZeroMV" ||
+	if (effectName == "DLSS\\DLSS_SR" ||
+		effectName == "DLSS\\DLSS_ZeroMV" ||
 		effectName == "DLSS\\DLSS_ZeroMV_Jitter" ||
 		effectName == "DLSS\\DLSS_OpticalFlow") {
 		auto getParameter = [&](std::string_view name, float defaultValue) {
@@ -103,7 +112,7 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 		const bool isJitter = effectName == "DLSS\\DLSS_ZeroMV_Jitter";
 		const bool isLegacyOpticalFlow =
 			effectName == "DLSS\\DLSS_OpticalFlow";
-		return CreateBackend<DLSSZeroMVUpscaler>(
+		return CreateBackend<DLSSSRUpscaler>(
 			effectName, resources, input, output,
 			DLSSSRSettings{
 				.enableJitter = isJitter,

@@ -44,7 +44,7 @@ For normal use, choose either `DLSS SR_Experimental` or `RTXVideo_VSR_Ultra`; st
 
 #### DLSS Super Resolution
 
-`DLSS SR_Experimental` keeps the compatible internal identifier `DLSS_ZeroMV` but exposes two independent inputs. `Use Motion Vectors` supplies current-to-previous source-pixel optical flow and defaults to on. `Use Estimated Depth` supplies normalized inverse relative depth and defaults to off. Depth can still use optical flow internally for temporal stabilization when motion delivery is disabled. Real guidance is only bound when the DLSS input size matches the captured source; otherwise the channel safely falls back to Zero.
+`DLSS SR_Experimental` uses the `DLSS_SR` effect identifier and exposes two independent inputs. `Use Motion Vectors` supplies current-to-previous source-pixel optical flow and defaults to on. `Use Estimated Depth` supplies normalized inverse relative depth and defaults to off. Depth can still use optical flow internally for temporal stabilization when motion delivery is disabled. When a preceding SR stage changes the consumer size, shared guidance is resampled to that size instead of being discarded.
 
 | Effect | Observed advantages | Observed disadvantages | Recommendation |
 | --- | --- | --- | --- |

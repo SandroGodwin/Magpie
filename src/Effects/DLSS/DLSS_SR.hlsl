@@ -1,4 +1,4 @@
-// Experimental DLSS-SR adapter. Native NGX D3D11 code replaces this pass.
+// Experimental DLSS SR adapter. Native NGX D3D11 code replaces this pass.
 // It receives cleared depth and low-resolution motion-vector textures and is
 // not equivalent to an in-engine DLSS integration.
 

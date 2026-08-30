@@ -384,12 +384,21 @@ void ScalingWindow::SwitchToolbarState() noexcept {
 }
 
 void ScalingWindow::Render() noexcept {
+	if (!_PrepareFrontendRender()) {
+		return;
+	}
+
+	_CompleteFrontendRender(
+		_renderer->Render(false, _shouldWaitForRender || _isFirstFrame), false);
+}
+
+bool ScalingWindow::_PrepareFrontendRender() noexcept {
 	bool isSrcRepositioning = false;
 	bool srcFocusedChanged = false;
 	if (!_UpdateSrcState(isSrcRepositioning, srcFocusedChanged)) {
 		Logger::Get().Info("源窗口状态改变");
 		_DelayedStop(false, isSrcRepositioning);
-		return;
+		return false;
 	}
 
 	if (srcFocusedChanged) {
@@ -400,8 +409,17 @@ void ScalingWindow::Render() noexcept {
 	// 提前隐藏光标可以提高观感。缩放窗口显示后再隐藏光标还可能造成光标闪烁两次，第一次是
 	// 创建 D3D 设备后（可能是 OS bug），第二次是我们隐藏系统光标。
 	_cursorManager->Update();
+	return true;
+}
 
-	if (_renderer->Render(false, _shouldWaitForRender || _isFirstFrame) && _isFirstFrame) {
+void ScalingWindow::_CompleteFrontendRender(
+	bool submitted,
+	bool fromDLSSFGQueue
+) noexcept {
+	if (submitted && _isFirstFrame) {
+		Logger::Get().Info(fromDLSSFGQueue ?
+			"First frontend frame submitted by DLSSFG FIFO; showing scaling window" :
+			"First frontend frame submitted by regular renderer; showing scaling window");
 		_isFirstFrame = false;
 		// 第一帧渲染完成后显示缩放窗口
 		_Show();
@@ -500,6 +518,15 @@ LRESULT ScalingWindow::_MessageHandler(UINT msg, WPARAM wParam, LPARAM lParam) n
 		}
 
 		Render();
+		return 0;
+	}
+	case CommonSharedConstants::WM_FRONTEND_RENDER_DLSSFG:
+	{
+		if (_renderer && _PrepareFrontendRender()) {
+			_CompleteFrontendRender(_renderer->RenderDLSSFGFrame(
+				static_cast<uint32_t>(wParam),
+				static_cast<uint32_t>(lParam)), true);
+		}
 		return 0;
 	}
 	case WM_ENTERSIZEMOVE:

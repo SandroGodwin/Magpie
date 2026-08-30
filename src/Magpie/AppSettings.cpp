@@ -25,7 +25,8 @@ namespace Magpie {
 
 // 如果配置文件和已发布的正式版本不再兼容，应提高此版本号
 static constexpr uint32_t CONFIG_VERSION = 4;
-static constexpr uint32_t EXPERIMENTAL_DLSSNR_SETTINGS_VERSION = 1;
+static constexpr uint32_t EXPERIMENTAL_DLSSNR_SETTINGS_VERSION = 2;
+static constexpr uint32_t EXPERIMENTAL_DLSS_SR_SETTINGS_VERSION = 1;
 
 _AppSettingsData::_AppSettingsData() {}
 
@@ -638,6 +639,8 @@ bool AppSettings::_Save(const _AppSettingsData& data) noexcept {
 	writer.Bool(data._isFP16Disabled);
 	writer.Key("experimentalDlssnrSettingsVersion");
 	writer.Uint(data._experimentalDlssnrSettingsVersion);
+	writer.Key("experimentalDlssSrSettingsVersion");
+	writer.Uint(data._experimentalDlssSrSettingsVersion);
 
 	ScalingModesService::Get().Export(writer);
 
@@ -692,6 +695,9 @@ void AppSettings::_LoadSettings(const rapidjson::GenericObject<true, rapidjson::
 	_experimentalDlssnrSettingsVersion = 0;
 	JsonHelper::ReadUInt(root, "experimentalDlssnrSettingsVersion",
 		_experimentalDlssnrSettingsVersion);
+	_experimentalDlssSrSettingsVersion = 0;
+	JsonHelper::ReadUInt(root, "experimentalDlssSrSettingsVersion",
+		_experimentalDlssSrSettingsVersion);
 
 	{
 		std::wstring language;
@@ -848,7 +854,7 @@ void AppSettings::_LoadSettings(const rapidjson::GenericObject<true, rapidjson::
 	[[maybe_unused]] bool result = ScalingModesService::Get().Import(root, true);
 	assert(result);
 
-	if (_experimentalDlssnrSettingsVersion < EXPERIMENTAL_DLSSNR_SETTINGS_VERSION) {
+	if (_experimentalDlssnrSettingsVersion < 1) {
 		uint32_t migratedEffects = 0;
 		for (ScalingMode& scalingMode : _scalingModes) {
 			for (EffectItem& effect : scalingMode.effects) {
@@ -870,11 +876,49 @@ void AppSettings::_LoadSettings(const rapidjson::GenericObject<true, rapidjson::
 		}
 
 		Logger::Get().Info(fmt::format(
-			"DLSSNR config migration v{}->v{}: guidanceMode 1->0 for {} effect(s)",
+			"DLSSNR config migration v{}->v1: guidanceMode 1->0 for {} effect(s)",
 			_experimentalDlssnrSettingsVersion,
-			EXPERIMENTAL_DLSSNR_SETTINGS_VERSION,
 			migratedEffects));
+	}
+
+	if (_experimentalDlssnrSettingsVersion < 2) {
+		uint32_t removedLegacyPresets = 0;
+		for (ScalingMode& scalingMode : _scalingModes) {
+			for (EffectItem& effect : scalingMode.effects) {
+				if (effect.name == L"DLSSNR\\DLSSNR_AI_Filter") {
+					removedLegacyPresets +=
+						static_cast<uint32_t>(effect.parameters.erase(L"preset"));
+				}
+			}
+		}
+
+		Logger::Get().Info(fmt::format(
+			"DLSSNR config migration v{}->v2: removed {} legacy preset value(s); "
+			"the v0.5.7 nrPreset starts at Default (0)",
+			_experimentalDlssnrSettingsVersion,
+			removedLegacyPresets));
+	}
+
+	if (_experimentalDlssnrSettingsVersion < EXPERIMENTAL_DLSSNR_SETTINGS_VERSION) {
 		_experimentalDlssnrSettingsVersion = EXPERIMENTAL_DLSSNR_SETTINGS_VERSION;
+		_isConfigMigrationNeeded = true;
+	}
+
+	if (_experimentalDlssSrSettingsVersion < EXPERIMENTAL_DLSS_SR_SETTINGS_VERSION) {
+		uint32_t migratedEffects = 0;
+		for (ScalingMode& scalingMode : _scalingModes) {
+			for (EffectItem& effect : scalingMode.effects) {
+				if (effect.name == L"DLSS\\DLSS_ZeroMV") {
+					effect.name = L"DLSS\\DLSS_SR";
+					++migratedEffects;
+				}
+			}
+		}
+		Logger::Get().Info(fmt::format(
+			"DLSS SR config migration v{}->v1: renamed {} effect identifier(s); "
+			"parameters and scaling types preserved",
+			_experimentalDlssSrSettingsVersion, migratedEffects));
+		_experimentalDlssSrSettingsVersion = EXPERIMENTAL_DLSS_SR_SETTINGS_VERSION;
 		_isConfigMigrationNeeded = true;
 	}
 
@@ -1292,13 +1336,13 @@ void AppSettings::_SetDefaultScalingModes() noexcept {
 		nearest.scalingType = ::Magpie::ScalingType::Normal;
 		nearest.scale = { 2.0f,2.0f };
 	}
-	// DLSS Zero-MV
+	// DLSS SR
 	{
-		auto& dlssZeroMV = _scalingModes[7];
-		dlssZeroMV.name = L"DLSS Zero-MV";
+		auto& dlssSr = _scalingModes[7];
+		dlssSr.name = L"DLSS SR";
 
-		auto& effect = dlssZeroMV.effects.emplace_back();
-		effect.name = L"DLSS\\DLSS_ZeroMV";
+		auto& effect = dlssSr.effects.emplace_back();
+		effect.name = L"DLSS\\DLSS_SR";
 		effect.scalingType = ::Magpie::ScalingType::Fit;
 	}
 	// DLSS Jitter

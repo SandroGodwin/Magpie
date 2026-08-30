@@ -3,6 +3,7 @@
 #include "DeviceResources.h"
 #include "FrameGuidanceD3D12Interop.h"
 #include "Logger.h"
+#include "NgxD3D12Core.h"
 
 #ifdef MP_ENABLE_DLSS_FRAME_GENERATION
 #include <d3d12.h>
@@ -16,6 +17,7 @@ struct DLSSFrameGenerator::Impl {
 
 	ID3D11Device5* device11 = nullptr;
 	ID3D11DeviceContext4* context11 = nullptr;
+	NgxD3D12Core* coreOwner = nullptr;
 	winrt::com_ptr<ID3D12Device> device12;
 	winrt::com_ptr<ID3D12CommandQueue> queue12;
 	winrt::com_ptr<ID3D12CommandAllocator> allocator12;
@@ -26,6 +28,8 @@ struct DLSSFrameGenerator::Impl {
 	winrt::com_ptr<ID3D12Resource> sharedGenerated12;
 	winrt::com_ptr<ID3D12Resource> zeroMotion12;
 	winrt::com_ptr<ID3D12Resource> zeroDepth12;
+	std::array<winrt::com_ptr<ID3D12Resource>, 4> interpolationDisable12;
+	std::array<winrt::com_ptr<ID3D12Resource>, 4> interpolationDisableReadback12;
 	std::unique_ptr<FrameGuidanceD3D12Interop> guidanceInterop;
 	winrt::com_ptr<ID3D12DescriptorHeap> descriptorHeap12;
 	winrt::com_ptr<ID3D11Fence> fence11;
@@ -38,16 +42,133 @@ struct DLSSFrameGenerator::Impl {
 	uint32_t renderWidth = 0;
 	uint32_t renderHeight = 0;
 	uint32_t multiplier = 2;
+	uint32_t maxSupportedMultiplier = 2;
+	uint32_t diagnosticRealFrames = 0;
+	std::array<uint32_t, 4> diagnosticEvaluateSuccess{};
+	std::array<uint32_t, 4> diagnosticEvaluateFailure{};
+	std::array<uint32_t, 4> diagnosticInterpolationEnabled{};
+	std::array<uint32_t, 4> diagnosticInterpolationDisabled{};
+	std::array<uint32_t, 4> diagnosticInterpolationReadbackFailure{};
+	uint32_t diagnosticGeneratedPublishSuccess = 0;
+	uint32_t diagnosticGeneratedPublishFailure = 0;
 	DLSSFrameGenerationSettings settings{};
 	FrameGuidanceFrameId lastGuidanceResetFrameId =
 		std::numeric_limits<FrameGuidanceFrameId>::max();
 	uint8_t lastGuidanceBinding = UINT8_MAX;
-	bool ngxInitialized = false;
+	bool coreRegistered = false;
 	bool resetHistory = true;
 };
 
 static bool NGXSucceeded(NVSDK_NGX_Result result) noexcept {
 	return NVSDK_NGX_SUCCEED(result);
+}
+
+static LONG CaptureNgxException(DWORD code, DWORD* sehCode) noexcept {
+	*sehCode = code;
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+static NVSDK_NGX_Result ReleaseFeatureSafely(
+	NVSDK_NGX_Handle* feature,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		return NVSDK_NGX_D3D12_ReleaseFeature(feature);
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return NVSDK_NGX_Result_FAIL_PlatformError;
+	}
+}
+
+static NVSDK_NGX_Result GetParameterISafely(
+	NVSDK_NGX_Parameter* parameters,
+	const char* name,
+	int* value,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		return NVSDK_NGX_Parameter_GetI(parameters, name, value);
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return NVSDK_NGX_Result_FAIL_PlatformError;
+	}
+}
+
+static NVSDK_NGX_Result GetParameterUISafely(
+	NVSDK_NGX_Parameter* parameters,
+	const char* name,
+	uint32_t* value,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		return NVSDK_NGX_Parameter_GetUI(parameters, name, value);
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return NVSDK_NGX_Result_FAIL_PlatformError;
+	}
+}
+
+static bool SetParameterUISafely(
+	NVSDK_NGX_Parameter* parameters,
+	const char* name,
+	uint32_t value,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		NVSDK_NGX_Parameter_SetUI(parameters, name, value);
+		return true;
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return false;
+	}
+}
+
+static bool SetParameterULLSafely(
+	NVSDK_NGX_Parameter* parameters,
+	const char* name,
+	uint64_t value,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		NVSDK_NGX_Parameter_SetULL(parameters, name, value);
+		return true;
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return false;
+	}
+}
+
+static NVSDK_NGX_Result CreateDlssgSafely(
+	ID3D12GraphicsCommandList* commandList,
+	NVSDK_NGX_Handle** feature,
+	NVSDK_NGX_Parameter* parameters,
+	NVSDK_NGX_DLSSG_Create_Params* createParams,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		return NGX_D3D12_CREATE_DLSSG(
+			commandList, 1, 1, feature, parameters, createParams);
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return NVSDK_NGX_Result_FAIL_PlatformError;
+	}
+}
+
+static NVSDK_NGX_Result EvaluateDlssgSafely(
+	ID3D12GraphicsCommandList* commandList,
+	NVSDK_NGX_Handle* feature,
+	NVSDK_NGX_Parameter* parameters,
+	NVSDK_NGX_D3D12_DLSSG_Eval_Params* evalParams,
+	NVSDK_NGX_DLSSG_Opt_Eval_Params* optionalParams,
+	DWORD* sehCode
+) noexcept {
+	*sehCode = 0;
+	__try {
+		return NGX_D3D12_EVALUATE_DLSSG(
+			commandList, feature, parameters, evalParams, optionalParams);
+	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
+		return NVSDK_NGX_Result_FAIL_PlatformError;
+	}
 }
 
 static bool WaitForFence(DLSSFrameGenerator::Impl& impl, uint64_t value) noexcept {
@@ -79,13 +200,25 @@ DLSSFrameGenerator::Impl::~Impl() {
 		WaitForQueue(*this);
 	}
 	if (feature) {
-		NVSDK_NGX_D3D12_ReleaseFeature(feature);
+		DWORD sehCode = 0;
+		const NVSDK_NGX_Result result = ReleaseFeatureSafely(feature, &sehCode);
+		if (sehCode) {
+			Logger::Get().Warn(fmt::format(
+				"DLSSFG ReleaseFeature raised SEH {:#x}", sehCode));
+		} else if (!NGXSucceeded(result)) {
+			Logger::Get().Warn(fmt::format(
+				"DLSSFG ReleaseFeature failed ({:#x})",
+				static_cast<uint32_t>(result)));
+		}
+		feature = nullptr;
 	}
 	if (parameters) {
-		NVSDK_NGX_D3D12_DestroyParameters(parameters);
+		if (!coreOwner || !coreOwner->DestroyParameters(parameters, "DLSSFG")) {
+			Logger::Get().Warn("DLSSFG shared Core parameter destruction failed");
+		}
 	}
-	if (ngxInitialized && device12) {
-		NVSDK_NGX_D3D12_Shutdown1(device12.get());
+	if (coreRegistered && coreOwner) {
+		coreOwner->Release("DLSSFG");
 	}
 }
 
@@ -181,6 +314,68 @@ static bool CreateZeroTexture(
 	return true;
 }
 
+static bool CreateInterpolationDisableResources(
+	DLSSFrameGenerator::Impl& impl,
+	uint32_t frameIndex
+) noexcept {
+	D3D12_RESOURCE_DESC desc{};
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	desc.Width = 4;
+	desc.Height = 1;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.SampleDesc.Count = 1;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+	D3D12_HEAP_PROPERTIES heap{};
+	heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+	HRESULT hr = impl.device12->CreateCommittedResource(
+		&heap, D3D12_HEAP_FLAG_NONE, &desc,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+		IID_PPV_ARGS(impl.interpolationDisable12[frameIndex].put()));
+	if (FAILED(hr)) {
+		Logger::Get().ComError(
+			"Create DLSSFG interpolation-disable output failed", hr);
+		return false;
+	}
+
+	heap.Type = D3D12_HEAP_TYPE_READBACK;
+	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	hr = impl.device12->CreateCommittedResource(
+		&heap, D3D12_HEAP_FLAG_NONE, &desc,
+		D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+		IID_PPV_ARGS(impl.interpolationDisableReadback12[frameIndex].put()));
+	if (FAILED(hr)) {
+		Logger::Get().ComError(
+			"Create DLSSFG interpolation-disable readback failed", hr);
+		return false;
+	}
+	return true;
+}
+
+static void CollectInterpolationDisableDiagnostic(
+	DLSSFrameGenerator::Impl& impl,
+	uint32_t frameIndex
+) noexcept {
+	D3D12_RANGE readRange{ 0, 1 };
+	void* mapped = nullptr;
+	const HRESULT hr = impl.interpolationDisableReadback12[frameIndex]->Map(
+		0, &readRange, &mapped);
+	if (FAILED(hr) || !mapped) {
+		++impl.diagnosticInterpolationReadbackFailure[frameIndex];
+		return;
+	}
+	const bool disabled = *static_cast<const uint8_t*>(mapped) != 0;
+	D3D12_RANGE writtenRange{};
+	impl.interpolationDisableReadback12[frameIndex]->Unmap(0, &writtenRange);
+	if (disabled) {
+		++impl.diagnosticInterpolationDisabled[frameIndex];
+	} else {
+		++impl.diagnosticInterpolationEnabled[frameIndex];
+	}
+}
+
 static void SetIdentity(float matrix[4][4]) noexcept {
 	for (uint32_t row = 0; row < 4; ++row) {
 		for (uint32_t column = 0; column < 4; ++column) {
@@ -194,6 +389,7 @@ DLSSFrameGenerator::~DLSSFrameGenerator() = default;
 
 bool DLSSFrameGenerator::Initialize(
 	DeviceResources& resources,
+	NgxD3D12Core& ngxCore,
 	ID3D11Texture2D* input,
 	FrameGuidanceExtent guidanceExtent,
 	const DLSSFrameGenerationSettings& settings
@@ -204,6 +400,7 @@ bool DLSSFrameGenerator::Initialize(
 	auto impl = std::make_unique<Impl>();
 	impl->device11 = resources.GetD3DDevice();
 	impl->context11 = resources.GetD3DDC();
+	impl->coreOwner = &ngxCore;
 	impl->settings = _requestedSettings;
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
@@ -228,13 +425,12 @@ bool DLSSFrameGenerator::Initialize(
 			impl->width, impl->height));
 	}
 
-	HRESULT hr = D3D12CreateDevice(
-		resources.GetGraphicsAdapter(), D3D_FEATURE_LEVEL_11_0,
-		IID_PPV_ARGS(impl->device12.put()));
-	if (FAILED(hr)) {
-		Logger::Get().ComError("Create DLSSFG D3D12 device failed", hr);
+	if (!ngxCore.Acquire(resources, "DLSSFG")) {
 		return false;
 	}
+	impl->coreRegistered = true;
+	impl->device12.copy_from(ngxCore.Device());
+	HRESULT hr = S_OK;
 
 	D3D12_COMMAND_QUEUE_DESC queueDesc{};
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -290,54 +486,53 @@ bool DLSSFrameGenerator::Initialize(
 	}
 	impl->commandList12->ResourceBarrier(2, auxBarriers);
 
-	NVSDK_NGX_Result result = NVSDK_NGX_D3D12_Init_with_ProjectID(
-		"7c134ab9-9677-4af5-a2b2-bca943350861",
-		NVSDK_NGX_ENGINE_TYPE_CUSTOM,
-		"Magpie-DLSSFG-1",
-		L"logs",
-		impl->device12.get()
-	);
-	if (!NGXSucceeded(result)) {
-		Logger::Get().Error(fmt::format(
-			"NVSDK_NGX_D3D12_Init for DLSSFG failed ({:#x})", (uint32_t)result));
-		return false;
-	}
-	impl->ngxInitialized = true;
-
-	result = NVSDK_NGX_D3D12_GetCapabilityParameters(&impl->parameters);
-	if (!NGXSucceeded(result) || !impl->parameters) {
-		Logger::Get().Error(fmt::format(
-			"Get DLSSFG capability parameters failed ({:#x})", (uint32_t)result));
+	NVSDK_NGX_Result result = NVSDK_NGX_Result_Success;
+	if (!ngxCore.GetCapabilityParameters(&impl->parameters, "DLSSFG")) {
 		return false;
 	}
 
 	int available = 0;
-	result = NVSDK_NGX_Parameter_GetI(
-		impl->parameters, NVSDK_NGX_Parameter_FrameGeneration_Available, &available);
+	DWORD sehCode = 0;
+	result = GetParameterISafely(
+		impl->parameters, NVSDK_NGX_Parameter_FrameGeneration_Available,
+		&available, &sehCode);
 	if (!NGXSucceeded(result) || !available) {
 		int initResult = 0;
-		NVSDK_NGX_Parameter_GetI(impl->parameters,
-			NVSDK_NGX_Parameter_FrameGeneration_FeatureInitResult, &initResult);
+		DWORD initSehCode = 0;
+		GetParameterISafely(
+			impl->parameters,
+			NVSDK_NGX_Parameter_FrameGeneration_FeatureInitResult,
+			&initResult, &initSehCode);
 		Logger::Get().Error(fmt::format(
-			"DLSS Frame Generation is unavailable (result={:#x})", (uint32_t)initResult));
+			"DLSS Frame Generation is unavailable (result={:#x}, seh={:#x})",
+			(uint32_t)initResult, sehCode ? sehCode : initSehCode));
 		return false;
 	}
 
 	uint32_t maxGeneratedFrames = 1;
-	if (!NGXSucceeded(NVSDK_NGX_Parameter_GetUI(
+	sehCode = 0;
+	if (!NGXSucceeded(GetParameterUISafely(
 		impl->parameters,
 		NVSDK_NGX_DLSSG_Parameter_MultiFrameCountMax,
-		&maxGeneratedFrames))) {
+		&maxGeneratedFrames,
+		&sehCode))) {
 		maxGeneratedFrames = 1;
 	}
 	maxGeneratedFrames = std::clamp(maxGeneratedFrames, 1u, 3u);
+	impl->maxSupportedMultiplier = maxGeneratedFrames + 1;
 	impl->multiplier = std::min(
-		_requestedSettings.multiplier, maxGeneratedFrames + 1);
+		_requestedSettings.multiplier, impl->maxSupportedMultiplier);
 	if (impl->multiplier != _requestedSettings.multiplier) {
 		Logger::Get().Warn(fmt::format(
 			"DLSSFG {}x requested, hardware supports up to {}x; using {}x",
 			_requestedSettings.multiplier,
 			maxGeneratedFrames + 1, impl->multiplier));
+	}
+	for (uint32_t frameIndex = 1;
+		frameIndex < impl->multiplier; ++frameIndex) {
+		if (!CreateInterpolationDisableResources(*impl, frameIndex)) {
+			return false;
+		}
 	}
 
 	const uint32_t neverProvidedFlags =
@@ -345,11 +540,16 @@ bool DLSSFrameGenerator::Initialize(
 		NVSDK_NGX_DLSSG_ResourceFlags_UI |
 		NVSDK_NGX_DLSSG_ResourceFlags_UIAlpha |
 		NVSDK_NGX_DLSSG_ResourceFlags_BidirectionalDistortionField |
-		NVSDK_NGX_DLSSG_ResourceFlags_OutputReal |
-		NVSDK_NGX_DLSSG_ResourceFlags_OutputDisableInterpolation;
-	NVSDK_NGX_Parameter_SetUI(impl->parameters,
+		NVSDK_NGX_DLSSG_ResourceFlags_OutputReal;
+	sehCode = 0;
+	const bool resourceFlagsSet = SetParameterUISafely(impl->parameters,
 		NVSDK_NGX_DLSSG_Parameter_ResourceNeverProvided_Flags,
-		neverProvidedFlags);
+		neverProvidedFlags, &sehCode);
+	if (!resourceFlagsSet) {
+		Logger::Get().Error(fmt::format(
+			"Set DLSSFG resource flags raised SEH {:#x}", sehCode));
+		return false;
+	}
 
 	NVSDK_NGX_DLSSG_Create_Params createParams{};
 	createParams.Width = impl->width;
@@ -358,12 +558,14 @@ bool DLSSFrameGenerator::Initialize(
 	createParams.RenderWidth = impl->renderWidth;
 	createParams.RenderHeight = impl->renderHeight;
 	createParams.DynamicResolutionScaling = false;
-	result = NGX_D3D12_CREATE_DLSSG(
-		impl->commandList12.get(), 1, 1, &impl->feature,
-		impl->parameters, &createParams);
+	sehCode = 0;
+	result = CreateDlssgSafely(
+		impl->commandList12.get(), &impl->feature,
+		impl->parameters, &createParams, &sehCode);
 	if (!NGXSucceeded(result) || !impl->feature) {
 		Logger::Get().Error(fmt::format(
-			"NGX_D3D12_CREATE_DLSSG failed ({:#x})", (uint32_t)result));
+			"NGX_D3D12_CREATE_DLSSG failed ({:#x}, seh={:#x})",
+			(uint32_t)result, sehCode));
 		return false;
 	}
 
@@ -398,20 +600,27 @@ bool DLSSFrameGenerator::Initialize(
 
 	Logger::Get().Info(fmt::format(
 		"DLSS FG_Experimental initialized: backbuffer={}x{}, render={}x{}, "
-		"multiplier={}x, requestedMotion={}, requestedDepth={}",
+		"multiplier={}x, requestedMotion={}, requestedDepth={}, "
+		"motionContract=current-to-previous/source-pixels scale=1,1",
 		impl->width, impl->height, impl->renderWidth, impl->renderHeight,
 		impl->multiplier, impl->settings.useMotionVectors,
 		impl->settings.useEstimatedDepth));
+	if (impl->settings.useEstimatedDepth) {
+		Logger::Get().Warn(
+			"DLSSFG Estimated Depth is experimental: DAV2 relative inverse depth "
+			"is not hardware projection depth; Motion-only is recommended");
+	}
 	_impl = std::move(impl);
 	return true;
 }
 
 bool DLSSFrameGenerator::Resize(
 	DeviceResources& resources,
+	NgxD3D12Core& ngxCore,
 	ID3D11Texture2D* input,
 	FrameGuidanceExtent guidanceExtent
 ) noexcept {
-	return Initialize(resources, input, guidanceExtent, _requestedSettings);
+	return Initialize(resources, ngxCore, input, guidanceExtent, _requestedSettings);
 }
 
 FrameGuidanceRequirements
@@ -425,6 +634,10 @@ DLSSFrameGenerator::GetFrameGuidanceRequirements() const noexcept {
 
 uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
 	return _impl ? _impl->multiplier : _requestedSettings.multiplier;
+}
+
+uint32_t DLSSFrameGenerator::MaxSupportedMultiplier() const noexcept {
+	return _impl ? _impl->maxSupportedMultiplier : 2;
 }
 
 bool DLSSFrameGenerator::Draw(
@@ -497,6 +710,16 @@ bool DLSSFrameGenerator::Draw(
 	}
 
 	const uint32_t generatedFrameCount = impl.resetHistory ? 1 : impl.multiplier - 1;
+	DWORD frameIdSehCode = 0;
+	if (!SetParameterULLSafely(
+		impl.parameters, NVSDK_NGX_DLSSG_Parameter_BackbufferFrameID,
+		frameId, &frameIdSehCode)) {
+		Logger::Get().Error(fmt::format(
+			"Set DLSSFG BackbufferFrameID raised SEH {:#x}", frameIdSehCode));
+		return false;
+	}
+	const bool sampleInterpolationDisable =
+		!impl.resetHistory && impl.diagnosticRealFrames + 1 >= 120;
 	for (uint32_t frameIndex = 1; frameIndex <= generatedFrameCount; ++frameIndex) {
 		hr = impl.allocator12->Reset();
 		if (SUCCEEDED(hr)) {
@@ -533,6 +756,8 @@ bool DLSSFrameGenerator::Draw(
 		evalParams.pMVecs = sharedGuidanceBound ?
 			impl.guidanceInterop->Motion() : impl.zeroMotion12.get();
 		evalParams.pOutputInterpFrame = impl.sharedGenerated12.get();
+		evalParams.pOutputDisableInterpolation =
+			impl.interpolationDisable12[frameIndex].get();
 
 		NVSDK_NGX_DLSSG_Opt_Eval_Params optionalParams{};
 		optionalParams.multiFrameCount = generatedFrameCount;
@@ -542,10 +767,10 @@ bool DLSSFrameGenerator::Draw(
 		SetIdentity(optionalParams.clipToLensClip);
 		SetIdentity(optionalParams.clipToPrevClip);
 		SetIdentity(optionalParams.prevClipToClip);
-		// Frame Guidance motion is current-to-previous in render-pixel units;
-		// DLSSG consumes normalized vectors.
-		optionalParams.mvecScale[0] = 1.0f / float(impl.renderWidth);
-		optionalParams.mvecScale[1] = 1.0f / float(impl.renderHeight);
+		// Frame Guidance motion is already current-to-previous in pixels at the
+		// motion-vector resource resolution. DLSSG therefore requires unit scale.
+		optionalParams.mvecScale[0] = 1.0f;
+		optionalParams.mvecScale[1] = 1.0f;
 		optionalParams.cameraUp[1] = 1.0f;
 		optionalParams.cameraRight[0] = 1.0f;
 		optionalParams.cameraFwd[2] = 1.0f;
@@ -585,15 +810,36 @@ bool DLSSFrameGenerator::Draw(
 			impl.width, impl.height
 		};
 
-		const NVSDK_NGX_Result result = NGX_D3D12_EVALUATE_DLSSG(
+		DWORD sehCode = 0;
+		const NVSDK_NGX_Result result = EvaluateDlssgSafely(
 			impl.commandList12.get(), impl.feature, impl.parameters,
-			&evalParams, &optionalParams);
+			&evalParams, &optionalParams, &sehCode);
 		if (!NGXSucceeded(result)) {
+			++impl.diagnosticEvaluateFailure[frameIndex];
 			impl.commandList12->Close();
 			Logger::Get().Error(fmt::format(
-				"NGX_D3D12_EVALUATE_DLSSG failed ({:#x}, index={}/{})",
-				(uint32_t)result, frameIndex, generatedFrameCount));
+				"NGX_D3D12_EVALUATE_DLSSG failed ({:#x}, seh={:#x}, index={}/{})",
+				(uint32_t)result, sehCode, frameIndex, generatedFrameCount));
 			return false;
+		}
+		++impl.diagnosticEvaluateSuccess[frameIndex];
+		if (sampleInterpolationDisable) {
+			D3D12_RESOURCE_BARRIER diagnosticBarrier{};
+			diagnosticBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			diagnosticBarrier.Transition = {
+				impl.interpolationDisable12[frameIndex].get(),
+				D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+				D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+				D3D12_RESOURCE_STATE_COPY_SOURCE
+			};
+			impl.commandList12->ResourceBarrier(1, &diagnosticBarrier);
+			impl.commandList12->CopyBufferRegion(
+				impl.interpolationDisableReadback12[frameIndex].get(), 0,
+				impl.interpolationDisable12[frameIndex].get(), 0, 4);
+			std::swap(
+				diagnosticBarrier.Transition.StateBefore,
+				diagnosticBarrier.Transition.StateAfter);
+			impl.commandList12->ResourceBarrier(1, &diagnosticBarrier);
 		}
 
 		for (D3D12_RESOURCE_BARRIER& barrier : barriers) {
@@ -623,14 +869,57 @@ bool DLSSFrameGenerator::Draw(
 		if (FAILED(hr)) {
 			return false;
 		}
-		if (!impl.resetHistory && !publishGeneratedFrame(impl.sharedGenerated11.get())) {
-			return false;
+		if (!impl.resetHistory) {
+			if (!publishGeneratedFrame(impl.sharedGenerated11.get())) {
+				++impl.diagnosticGeneratedPublishFailure;
+				return false;
+			}
+			++impl.diagnosticGeneratedPublishSuccess;
+		}
+	}
+	if (sampleInterpolationDisable) {
+		for (uint32_t frameIndex = 1;
+			frameIndex <= generatedFrameCount; ++frameIndex) {
+			CollectInterpolationDisableDiagnostic(impl, frameIndex);
 		}
 	}
 
 	impl.resetHistory = false;
 	impl.lastGuidanceBinding = guidanceBinding;
 	if (guidanceReset) impl.lastGuidanceResetFrameId = frameId;
+	if (++impl.diagnosticRealFrames >= 120) {
+		Logger::Get().Info(fmt::format(
+			"DLSSFG 120-real-frame diagnostics: multiplier={}x "
+			"evaluate[index1={}/{} index2={}/{} index3={}/{}] "
+			"generatedPublish={}/{} "
+			"interpolation[index1={}/{}/{} index2={}/{}/{} index3={}/{}/{}]",
+			impl.multiplier,
+			impl.diagnosticEvaluateSuccess[1],
+			impl.diagnosticEvaluateFailure[1],
+			impl.diagnosticEvaluateSuccess[2],
+			impl.diagnosticEvaluateFailure[2],
+			impl.diagnosticEvaluateSuccess[3],
+			impl.diagnosticEvaluateFailure[3],
+			impl.diagnosticGeneratedPublishSuccess,
+			impl.diagnosticGeneratedPublishFailure,
+			impl.diagnosticInterpolationEnabled[1],
+			impl.diagnosticInterpolationDisabled[1],
+			impl.diagnosticInterpolationReadbackFailure[1],
+			impl.diagnosticInterpolationEnabled[2],
+			impl.diagnosticInterpolationDisabled[2],
+			impl.diagnosticInterpolationReadbackFailure[2],
+			impl.diagnosticInterpolationEnabled[3],
+			impl.diagnosticInterpolationDisabled[3],
+			impl.diagnosticInterpolationReadbackFailure[3]));
+		impl.diagnosticRealFrames = 0;
+		impl.diagnosticEvaluateSuccess.fill(0);
+		impl.diagnosticEvaluateFailure.fill(0);
+		impl.diagnosticInterpolationEnabled.fill(0);
+		impl.diagnosticInterpolationDisabled.fill(0);
+		impl.diagnosticInterpolationReadbackFailure.fill(0);
+		impl.diagnosticGeneratedPublishSuccess = 0;
+		impl.diagnosticGeneratedPublishFailure = 0;
+	}
 	return true;
 }
 
@@ -638,6 +927,10 @@ void DLSSFrameGenerator::RequestHistoryReset() noexcept {
 	if (_impl) {
 		_impl->resetHistory = true;
 	}
+}
+
+bool DLSSFrameGenerator::Drain() noexcept {
+	return !_impl || !_impl->queue12 || !_impl->fence12 || WaitForQueue(*_impl);
 }
 
 }
@@ -650,13 +943,14 @@ struct DLSSFrameGenerator::Impl {};
 DLSSFrameGenerator::DLSSFrameGenerator() = default;
 DLSSFrameGenerator::~DLSSFrameGenerator() = default;
 bool DLSSFrameGenerator::Initialize(
-	DeviceResources&, ID3D11Texture2D*, FrameGuidanceExtent,
+	DeviceResources&, NgxD3D12Core&, ID3D11Texture2D*, FrameGuidanceExtent,
 	const DLSSFrameGenerationSettings&) noexcept {
 	Logger::Get().Error("DLSS Frame Generation is disabled at build time");
 	return false;
 }
 bool DLSSFrameGenerator::Resize(
-	DeviceResources&, ID3D11Texture2D*, FrameGuidanceExtent) noexcept {
+	DeviceResources&, NgxD3D12Core&, ID3D11Texture2D*,
+	FrameGuidanceExtent) noexcept {
 	return false;
 }
 bool DLSSFrameGenerator::Draw(
@@ -666,11 +960,13 @@ bool DLSSFrameGenerator::Draw(
 	return false;
 }
 void DLSSFrameGenerator::RequestHistoryReset() noexcept {}
+bool DLSSFrameGenerator::Drain() noexcept { return true; }
 FrameGuidanceRequirements
 DLSSFrameGenerator::GetFrameGuidanceRequirements() const noexcept { return {}; }
 uint32_t DLSSFrameGenerator::Multiplier() const noexcept {
 	return _requestedSettings.multiplier;
 }
+uint32_t DLSSFrameGenerator::MaxSupportedMultiplier() const noexcept { return 2; }
 
 }
 

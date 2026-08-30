@@ -84,6 +84,10 @@ public:
 		return _isResizingOrMoving;
 	}
 
+	bool IsFirstFramePending() const noexcept {
+		return _isFirstFrame;
+	}
+
 	winrt::hstring GetLocalizedString(std::wstring_view resName) const;
 
 	void ShowToast(std::wstring_view msg) const noexcept {
@@ -117,6 +121,8 @@ private:
 	ScalingError _InitialMoveSrcWindowInFullscreen() noexcept;
 
 	void _Show() noexcept;
+	bool _PrepareFrontendRender() noexcept;
+	void _CompleteFrontendRender(bool submitted, bool fromDLSSFGQueue) noexcept;
 
 	bool _UpdateSrcState(
 		bool& isSrcRepositioning,

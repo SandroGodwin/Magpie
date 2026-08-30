@@ -482,9 +482,9 @@ static void SetIdentity(float matrix[16]) noexcept {
 	}
 }
 
-void XeSSFGPresenter::EndFrame(bool waitForGpu) noexcept {
+bool XeSSFGPresenter::EndFrame(bool waitForGpu) noexcept {
 	if (!_impl) {
-		return;
+		return false;
 	}
 	Impl& impl = *_impl;
 	xellAddMarkerData(impl.xell, impl.frameId, XELL_SIMULATION_END);
@@ -493,24 +493,24 @@ void XeSSFGPresenter::EndFrame(bool waitForGpu) noexcept {
 	const uint64_t inputReady = ++impl.fenceValue;
 	HRESULT hr = impl.context11->Signal(impl.fence11.get(), inputReady);
 	if (FAILED(hr)) {
-		return;
+		return false;
 	}
 	impl.context11->Flush();
 	if (FAILED(impl.queue12->Wait(impl.fence12.get(), inputReady))) {
-		return;
+		return false;
 	}
 
 	const uint32_t bufferIndex = impl.swapChain->GetCurrentBackBufferIndex();
 	if (!WaitForFence(impl, impl.allocatorFenceValues[bufferIndex])) {
 		Logger::Get().Error("XeSSFG command allocator wait timed out");
-		return;
+		return false;
 	}
 	hr = impl.allocators12[bufferIndex]->Reset();
 	if (SUCCEEDED(hr)) {
 		hr = impl.commandList12->Reset(impl.allocators12[bufferIndex].get(), nullptr);
 	}
 	if (FAILED(hr)) {
-		return;
+		return false;
 	}
 
 	D3D12_RESOURCE_BARRIER barriers[2]{};
@@ -533,7 +533,7 @@ void XeSSFGPresenter::EndFrame(bool waitForGpu) noexcept {
 	impl.commandList12->ResourceBarrier(2, barriers);
 	hr = impl.commandList12->Close();
 	if (FAILED(hr)) {
-		return;
+		return false;
 	}
 	ID3D12CommandList* lists[]{ impl.commandList12.get() };
 	impl.queue12->ExecuteCommandLists(1, lists);
@@ -628,6 +628,7 @@ void XeSSFGPresenter::EndFrame(bool waitForGpu) noexcept {
 	}
 	impl.context11->DiscardView(impl.colorRtv11.get());
 	++impl.frameId;
+	return SUCCEEDED(hr);
 }
 
 bool XeSSFGPresenter::OnResize() noexcept {
@@ -695,7 +696,7 @@ bool XeSSFGPresenter::BeginFrame(
 	POINT&) noexcept {
 	return false;
 }
-void XeSSFGPresenter::EndFrame(bool) noexcept {}
+bool XeSSFGPresenter::EndFrame(bool) noexcept { return false; }
 bool XeSSFGPresenter::OnResize() noexcept { return false; }
 
 }

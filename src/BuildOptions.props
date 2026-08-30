@@ -14,7 +14,7 @@
     <DebugInfoOnOverlay>false</DebugInfoOnOverlay>
     <!-- 使用 composition swapchain 呈现 -->
     <UseCompSwapchain>false</UseCompSwapchain>
-    <!-- Experimental NVIDIA DLSS-SR with cleared motion/depth inputs. -->
+    <!-- Deprecated compatibility input; use EnableDLSSSR in new overrides. -->
     <EnableDLSSZeroMV>false</EnableDLSSZeroMV>
     <!-- Experimental NVIDIA DLSS Frame Generation through D3D11/D3D12 sharing. -->
     <EnableDLSSFrameGeneration>false</EnableDLSSFrameGeneration>
@@ -58,4 +58,8 @@
   
   <!-- 用户自定义编译选项 -->
   <Import Project="$(MSBuildThisFileDirectory)\BuildOptions.props.user" Condition="Exists('$(MSBuildThisFileDirectory)\BuildOptions.props.user')" />
+  <PropertyGroup>
+    <!-- Preserve existing local/CI overrides while using the accurate name internally. -->
+    <EnableDLSSSR Condition="'$(EnableDLSSSR)' == ''">$(EnableDLSSZeroMV)</EnableDLSSSR>
+  </PropertyGroup>
 </Project>

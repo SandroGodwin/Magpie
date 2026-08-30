@@ -2,7 +2,7 @@
 
 > 创建时间：2026-08-29（Asia/Shanghai）
 > 分支：`experimental`
-> 状态：P0–P3、P5、P6 已完成并经用户实测暂未发现问题；P7 的 DLSS SR/DLSS FG 接线已实现，XeSS FG 按当前范围后置
+> 状态：P0–P3、P5、P6 已完成并经用户实测暂未发现问题；P7 的 DLSS SR/DLSS FG 接线已实现；P8 的 v0.5.7 参数实现和 Release x64 构建已完成，等待实机运行验收
 > 目标：先修正可见参数合同与 Indicator 位置，再隔离并消除主要帧时间尖峰。
 
 ## 当前结论
@@ -11,14 +11,18 @@
 2. 异步化后的 2560×1440 实测表明，首要瓶颈已经转为 NGX Evaluate GPU：两组样本平均约 13.4–15.6 ms，P95 约 19.7–20.0 ms，P99 约 27.6–29.2 ms；这会吃满 60 FPS 的单帧预算。
 3. CPU bridge 已不再是瓶颈：四槽 `slotWait` P99 约 0.001 ms，Evaluate CPU 稳态约 0.36–0.40 ms，submit 约 0.07–0.08 ms。DirectML ORT 稳态约 13–16 ms，个别达到 41.5 ms，虽不阻塞 Renderer CPU，但会与 NGX 争用 GPU 并放大 P95/P99。
 4. `NR Reset` 不具有可预期的性能收益。可用项目把它作为创建、尺寸变化和历史不连续后的内部一次性标志，而不是画质风格参数；短期不提供用户控制，也不把它当作性能优化手段。
-5. 参考可用实现后，参数合同应统一为：
+5. v0.5.7 以 SHA256 `E1C28FDE0922B12FC10734E58C3D24A36808E575247F4FD4F36226540D7EE023` 的新 `renodx-dlss5.addon64` 为准，覆盖 0.5.6 的旧参数决定：
+   - `NR Preset`：`0 Default`、`1 Preset #1`、`2 Preset #2`、`3 Preset #3`。
    - `NR Style`：`0 Default`、`1 Natural`、`2 Cinematic`。
-   - `Local Tone Strength`：`0.0–1.0`。
-   - `Local Structure Strength`：`0.0–1.0`。
+   - `NR Intensity`、`Local Tone Strength`、`Local Structure Strength`：`0.0–2.0`，默认 `1.0`。
+   - `Skin Structure Strength`：`-1.0–2.0`，默认 `-1.0`。
+   - `Automatic Mask`、`NR UI Correction`：默认关闭。
 6. NVIDIA Indicator 在 Magpie 最终输出中的 Y 方向与参考项目的显示结果不同。以实机观察为准：左下角应使用 `X=0, Y=0`，不能继续照搬参考项目的 `Y=1`。
 7. 下一阶段不再优先压缩 bridge CPU 开销。当前实现用 NGX GPU 最新值与 EMA 控制 DAV2 提交频率，并为 NVOF 增加 GPU 区间计时，用实测决定是否继续牺牲 Guidance 更新率或 NVOF 质量。
 
-## P0：参数与可见行为修正
+## P0：参数与可见行为修正（0.5.6 历史记录）
+
+> 本节记录 0.5.6 当时已执行的决定；其中 Preset、强度范围和 Skin Structure 项已被 P8 的 0.5.7 合同覆盖。
 
 - [x] 将 Indicator 参数改为 `X=0, Y=0`；实际位置仍需在 16:9、非 16:9 和缩放/裁剪场景验证。
 - [x] 将 `NR Style` 的 UI 文案、范围、默认值和 native clamp 统一为 `0–2`：
@@ -155,6 +159,20 @@
 - [x] DLSS FG 的估算深度以 `Experimental` 参数暴露并默认关闭；XeSS FG 本轮不暴露。
 
 验收：三个消费者均只复用一份 Guidance；关闭通道时对应 Provider 不因该消费者运行；颜色、Motion、Depth 的基础帧 ID 一致；任一通道失败都能无闪退回退 Zero；实测确认运动方向、尺度、遮挡边界和 P95/P99 帧时间。
+
+## P8：v0.5.7 DLSSNR 参数暴露
+
+- [x] 增加 `NR Preset`，使用独立配置键 `nrPreset`，范围 `0–3`、默认 `0`；创建 Feature 时写入 `DLSSNR.Hint.Render.Preset`。
+- [x] 将 `NR Intensity`、`Local Tone Strength`、`Local Structure Strength` 的 UI 与 native clamp 统一扩展为 `0–2`。
+- [x] 增加 `Skin Structure Strength`，范围 `-1–2`、默认 `-1`，逐帧写入 `DLSSNR.SkinStructureStrength`。
+- [x] 增加 `NR UI Correction`，默认关闭，逐帧写入 `DLSSNR.UICorrection`。
+- [x] 保持 `Automatic Mask` 默认关闭；`Reset` 与 `Enabled` 继续由内部生命周期控制。
+- [x] 设置迁移版本升至 v2，清除旧的 `preset` 键，避免其在恢复 Preset 后意外生效。
+- [x] 状态日志增加最终 preset、skin structure 与 UI correction 值。
+- [x] Release x64 完整重建通过（0 警告、0 错误）；构建输出包含新版 HLSL 参数元数据，`Magpie.exe` 文件版本与产品版本均为 `0.5.7-experimental`。
+- [ ] 实机启动后确认效果解析器显示全部新增参数，并完成边界值 Evaluate 验收。
+
+验收：默认创建日志显示 `preset=0`、`skinStructure=-1`、`autoMask=false`、`uiCorrection=false`；全部数值参数在边界值上可创建并连续 Evaluate，超范围配置不会进入 NGX。
 
 ## 推荐执行顺序
 

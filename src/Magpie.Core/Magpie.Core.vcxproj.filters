@@ -124,6 +124,9 @@
     <ClInclude Include="FrameGuidanceD3D12Interop.h">
       <Filter>Render</Filter>
     </ClInclude>
+    <ClInclude Include="NgxD3D12Core.h">
+      <Filter>Render</Filter>
+    </ClInclude>
     <ClInclude Include="DLSSNRFilter.h">
       <Filter>Render</Filter>
     </ClInclude>
@@ -237,6 +240,9 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="FrameGuidanceD3D12Interop.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="NgxD3D12Core.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="DLSSNRFilter.cpp">

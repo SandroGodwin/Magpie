@@ -5,6 +5,7 @@
 #include "EffectDrawer.h"
 #include "EffectsProfiler.h"
 #include "FrameGuidanceService.h"
+#include "NgxD3D12Core.h"
 #include "OverlayDrawer.h"
 #include "PresenterBase.h"
 #include "StepTimer.h"
@@ -24,6 +25,10 @@ public:
 	ScalingError Initialize(HWND hwndAttach, OverlayOptions& overlayOptions) noexcept;
 
 	bool Render(bool force = false, bool waitForGpu = false) noexcept;
+	bool RenderDLSSFGFrame(
+		uint32_t sharedTextureSlot,
+		uint32_t sharedTextureGeneration
+	) noexcept;
 
 	bool OnResize() noexcept;
 
@@ -67,7 +72,24 @@ public:
 	) noexcept;
 
 private:
-	void _FrontendRender(bool waitForGpu = false) noexcept;
+	struct FrontendRenderTimings {
+		std::chrono::nanoseconds beginFrame{};
+		std::chrono::nanoseconds draw{};
+		std::chrono::nanoseconds endFrame{};
+	};
+
+	bool _FrontendRender(
+		bool waitForGpu = false,
+		uint32_t sharedTextureSlot = std::numeric_limits<uint32_t>::max(),
+		FrontendRenderTimings* timings = nullptr
+	) noexcept;
+	bool _OpenFrontendSharedTextures() noexcept;
+	void _ResetDLSSFGSlotEvents() noexcept;
+	void _RecordDLSSFGFrontendTimings(
+		bool usesFrameLatencyWaitableObject,
+		std::chrono::nanoseconds pacingWait,
+		const FrontendRenderTimings& timings
+	) noexcept;
 
 	void _BackendThreadProc() noexcept;
 
@@ -94,7 +116,11 @@ private:
 		bool isNewCaptureFrame
 	) noexcept;
 
-	bool _PublishBackendTexture(ID3D11Texture2D* texture, bool synchronous) noexcept;
+	bool _PublishBackendTexture(
+		ID3D11Texture2D* texture,
+		bool synchronous,
+		bool generatedFrame = false
+	) noexcept;
 
 	bool _InitializeDLSSFrameGenerator(
 		ID3D11Texture2D* input,
@@ -102,6 +128,8 @@ private:
 	) noexcept;
 	void _HandleDLSSFrameGenerationFailure(ID3D11Texture2D* input) noexcept;
 	void _DisableDLSSFrameGenerationForSession() noexcept;
+	bool _DrainNgxConsumers() noexcept;
+	void _ReleaseNgxConsumers() noexcept;
 
 	bool _UpdateDynamicConstants() const noexcept;
 
@@ -122,9 +150,12 @@ private:
 	CursorDrawer _cursorDrawer;
 	OverlayDrawer _overlayDrawer;
 
-	winrt::com_ptr<ID3D11Texture2D> _frontendSharedTexture;
-	winrt::com_ptr<IDXGIKeyedMutex> _frontendSharedTextureMutex;
-	uint64_t _lastAccessMutexKey = 0;
+	static constexpr uint32_t MAX_SHARED_TEXTURE_SLOTS = 4;
+	std::array<winrt::com_ptr<ID3D11Texture2D>, MAX_SHARED_TEXTURE_SLOTS>
+		_frontendSharedTextures;
+	std::array<winrt::com_ptr<IDXGIKeyedMutex>, MAX_SHARED_TEXTURE_SLOTS>
+		_frontendSharedTextureMutexes;
+	std::array<uint64_t, MAX_SHARED_TEXTURE_SLOTS> _lastAccessMutexKeys{};
 	RECT _destRect{};
 	
 	std::thread _backendThread;
@@ -137,6 +168,7 @@ private:
 	std::unique_ptr<FrameSourceBase> _frameSource;
 	FrameGuidanceService _frameGuidanceService;
 	FrameGuidanceFrameId _capturedFrameId = 0;
+	NgxD3D12Core _ngxD3D12Core;
 	std::vector<EffectDrawer> _effectDrawers;
 	std::vector<std::unique_ptr<class NativeEffectBackend>> _nativeEffectBackends;
 	std::unique_ptr<class DLSSFrameGenerator> _dlssFrameGenerator;
@@ -150,21 +182,46 @@ private:
 	uint64_t _fenceValue = 0;
 	wil::unique_event_nothrow _fenceEvent;
 
-	winrt::com_ptr<ID3D11Texture2D> _backendSharedTexture;
-	winrt::com_ptr<IDXGIKeyedMutex> _backendSharedTextureMutex;
+	std::array<winrt::com_ptr<ID3D11Texture2D>, MAX_SHARED_TEXTURE_SLOTS>
+		_backendSharedTextures;
+	std::array<winrt::com_ptr<IDXGIKeyedMutex>, MAX_SHARED_TEXTURE_SLOTS>
+		_backendSharedTextureMutexes;
+	std::array<HANDLE, MAX_SHARED_TEXTURE_SLOTS> _sharedTextureHandles{};
+	std::array<wil::unique_handle, MAX_SHARED_TEXTURE_SLOTS>
+		_sharedTextureAvailableEvents;
+	uint32_t _sharedTextureSlotCount = 1;
+	uint32_t _nextBackendSharedTextureSlot = 0;
 
 	winrt::com_ptr<ID3D11Buffer> _dynamicCB;
 
 	uint32_t _screenshotNum = 0;
 
 	// 可由所有线程访问
-	std::atomic<uint64_t> _sharedTextureMutexKey = 0;
+	std::array<std::atomic<uint64_t>, MAX_SHARED_TEXTURE_SLOTS>
+		_sharedTextureMutexKeys{};
+	std::atomic<uint32_t> _latestSharedTextureSlot = 0;
+	std::atomic<uint32_t> _sharedTextureGeneration = 0;
 	std::atomic<bool> _synchronousFramePresentationEnabled = false;
 	float _frameRateFilterTarget = 0.0f;
 	std::chrono::nanoseconds _synchronousPresentInterval{};
+	std::chrono::steady_clock::time_point _lastSynchronousPresentTime{};
+	uint32_t _dlssFgFrontendTimingFrames = 0;
+	bool _dlssFgFrontendTimingModeInitialized = false;
+	bool _dlssFgFrontendTimingUsesWaitableObject = false;
+	std::chrono::nanoseconds _dlssFgFrontendPacingWait{};
+	std::chrono::nanoseconds _dlssFgFrontendBeginFrame{};
+	std::chrono::nanoseconds _dlssFgFrontendDraw{};
+	std::chrono::nanoseconds _dlssFgFrontendEndFrame{};
+	std::atomic<uint64_t> _dlssFgRingWaitNanoseconds = 0;
+	std::atomic<uint64_t> _dlssFgRingWaitSamples = 0;
 	std::chrono::steady_clock::time_point _dlssFgDiagnosticsStart{};
 	uint32_t _dlssFgCapturedFrameCount = 0;
 	uint32_t _dlssFgPresentedFrameCount = 0;
+	uint32_t _dlssFgGeneratedPublishSuccess = 0;
+	uint32_t _dlssFgGeneratedPublishFailure = 0;
+	uint32_t _dlssFgRealPublishSuccess = 0;
+	uint32_t _dlssFgRealPublishFailure = 0;
+	bool _dlssFgPresentationStopping = false;
 	bool _isXeSSFrameGenerationActive = false;
 	bool _xessFgFrontendSuppressionLogged = false;
 

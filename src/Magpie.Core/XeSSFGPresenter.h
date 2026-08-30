@@ -19,7 +19,11 @@ public:
 		POINT& drawOffset
 	) noexcept override;
 
-	void EndFrame(bool waitForGpu = false) noexcept override;
+	bool EndFrame(bool waitForGpu = false) noexcept override;
+
+	bool UsesFrameLatencyWaitableObject() const noexcept override {
+		return true;
+	}
 
 	bool OnResize() noexcept override;
 

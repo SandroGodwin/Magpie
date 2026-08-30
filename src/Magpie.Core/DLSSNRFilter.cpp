@@ -3,6 +3,7 @@
 #include "DeviceResources.h"
 #include "DirectXHelper.h"
 #include "Logger.h"
+#include "NgxD3D12Core.h"
 #include "Win32Helper.h"
 #include "FrameGuidanceD3D12Interop.h"
 #include "FrameGuidancePerformance.h"
@@ -29,7 +30,6 @@ void LogDlssnrStatus(std::string message, bool error = false) noexcept {
 constexpr NVSDK_NGX_Feature FEATURE_DLSSNR =
 	static_cast<NVSDK_NGX_Feature>(18);
 constexpr unsigned long long DLSSNR_SIGNED_SNIPPET_APPLICATION_ID = 0x0876232Cull;
-constexpr int DEFAULT_NR_PRESET = 1;
 // Keep the unsupported Core Feature 18 route as an explicit diagnostic only.
 // It must never run before the signed snippet in a production session.
 constexpr bool ENABLE_CORE_FEATURE18_DIAGNOSTIC = false;
@@ -60,6 +60,7 @@ constexpr char PARAM_STYLE[] = "DLSSNR.Style";
 constexpr char PARAM_INTENSITY[] = "DLSSNR.Intensity";
 constexpr char PARAM_LOCAL_TONE[] = "DLSSNR.LocalToneStrength";
 constexpr char PARAM_LOCAL_STRUCTURE[] = "DLSSNR.LocalStructureStrength";
+constexpr char PARAM_SKIN_STRUCTURE[] = "DLSSNR.SkinStructureStrength";
 constexpr char PARAM_AUTO_MASK[] = "DLSSNR.UseAutoMask";
 constexpr char PARAM_UI_CORRECTION[] = "DLSSNR.UICorrection";
 constexpr char PARAM_INDICATOR_INVERT_X[] = "DLSS.Indicator.Invert.X.Axis";
@@ -171,6 +172,7 @@ struct DLSSNRFilter::Impl {
 
 	ID3D11Device5* device11 = nullptr;
 	ID3D11DeviceContext4* context11 = nullptr;
+	NgxD3D12Core* coreOwner = nullptr;
 	winrt::com_ptr<ID3D12Device> device12;
 	winrt::com_ptr<ID3D12CommandQueue> queue12;
 	winrt::com_ptr<ID3D12CommandAllocator> allocator12;
@@ -215,7 +217,7 @@ struct DLSSNRFilter::Impl {
 	uint32_t width = 0;
 	uint32_t height = 0;
 	bool convertInputToRgba = false;
-	bool coreInitialized = false;
+	bool coreRegistered = false;
 	bool snippetInitialized = false;
 	bool snippetCallerHookInstalled = false;
 	bool useSignedSnippet = false;
@@ -233,36 +235,6 @@ std::atomic<DLSSNRFilter::Impl::GetModuleFileNameWFn>
 LONG CaptureNgxException(DWORD code, DWORD* sehCode) noexcept {
 	*sehCode = code;
 	return EXCEPTION_EXECUTE_HANDLER;
-}
-
-NVSDK_NGX_Result CallCoreInitSafely(
-	const char* projectId,
-	const char* engineVersion,
-	const wchar_t* applicationDataPath,
-	ID3D12Device* device,
-	const NVSDK_NGX_FeatureCommonInfo* featureInfo,
-	DWORD* sehCode
-) noexcept {
-	*sehCode = 0;
-	__try {
-		return NVSDK_NGX_D3D12_Init_with_ProjectID(
-			projectId, NVSDK_NGX_ENGINE_TYPE_CUSTOM, engineVersion,
-			applicationDataPath, device, featureInfo, NVSDK_NGX_Version_API);
-	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
-		return NVSDK_NGX_Result_FAIL_PlatformError;
-	}
-}
-
-NVSDK_NGX_Result CallAllocateParametersSafely(
-	NVSDK_NGX_Parameter** parameters,
-	DWORD* sehCode
-) noexcept {
-	*sehCode = 0;
-	__try {
-		return NVSDK_NGX_D3D12_AllocateParameters(parameters);
-	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
-		return NVSDK_NGX_Result_FAIL_PlatformError;
-	}
 }
 
 NVSDK_NGX_Result CallCreateFeatureSafely(
@@ -304,18 +276,6 @@ NVSDK_NGX_Result CallReleaseFeatureSafely(
 	*sehCode = 0;
 	__try {
 		return function(feature);
-	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
-		return NVSDK_NGX_Result_FAIL_PlatformError;
-	}
-}
-
-NVSDK_NGX_Result CallDestroyParametersSafely(
-	NVSDK_NGX_Parameter* parameters,
-	DWORD* sehCode
-) noexcept {
-	*sehCode = 0;
-	__try {
-		return NVSDK_NGX_D3D12_DestroyParameters(parameters);
 	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
 		return NVSDK_NGX_Result_FAIL_PlatformError;
 	}
@@ -626,15 +586,8 @@ DLSSNRFilter::Impl::~Impl() {
 		feature = nullptr;
 	}
 	if (parameters) {
-		DWORD sehCode = 0;
-		const NVSDK_NGX_Result result =
-			CallDestroyParametersSafely(parameters, &sehCode);
-		if (sehCode) {
-			Logger::Get().Warn(fmt::format(
-				"DLSSNR DestroyParameters raised SEH {:#x}", sehCode));
-		} else if (!NGXSucceeded(result)) {
-			Logger::Get().Warn(fmt::format(
-				"DLSSNR DestroyParameters failed ({:#x})", (uint32_t)result));
+		if (!coreOwner || !coreOwner->DestroyParameters(parameters, "DLSSNR")) {
+			Logger::Get().Warn("DLSSNR shared Core parameter destruction failed");
 		}
 		parameters = nullptr;
 	}
@@ -665,19 +618,9 @@ DLSSNRFilter::Impl::~Impl() {
 		}
 		snippetModule = nullptr;
 	}
-	if (coreInitialized && device12) {
-		DWORD sehCode = 0;
-		const NVSDK_NGX_Result result = CallShutdownSafely(
-			static_cast<ShutdownFn>(&NVSDK_NGX_D3D12_Shutdown1),
-			device12.get(), &sehCode);
-		if (sehCode) {
-			Logger::Get().Warn(fmt::format(
-				"DLSSNR parameter Core Shutdown1 raised SEH {:#x}", sehCode));
-		} else if (!NGXSucceeded(result)) {
-			Logger::Get().Warn(fmt::format(
-				"DLSSNR parameter Core Shutdown1 failed ({:#x})", (uint32_t)result));
-		}
-		coreInitialized = false;
+	if (coreRegistered && coreOwner) {
+		coreOwner->Release("DLSSNR");
+		coreRegistered = false;
 	}
 }
 
@@ -756,7 +699,8 @@ static NVSDK_NGX_Result NVSDK_CONV SetScalingRatioCallback(
 }
 
 static void SetCreateParametersUnsafe(
-	DLSSNRFilter::Impl& impl
+	DLSSNRFilter::Impl& impl,
+	const DLSSNRSettings& settings
 ) {
 	impl.parameters->Set(PARAM_WIDTH, impl.width);
 	impl.parameters->Set(PARAM_HEIGHT, impl.height);
@@ -772,9 +716,7 @@ static void SetCreateParametersUnsafe(
 	impl.parameters->Set(
 		PARAM_SCALING_RATIO_CALLBACK,
 		FunctionAddress(&SetScalingRatioCallback));
-	// The preset is intentionally not user-facing. Keep the signed snippet's
-	// established default so old effect configurations cannot override it.
-	impl.parameters->Set(PARAM_PRESET, DEFAULT_NR_PRESET);
+	impl.parameters->Set(PARAM_PRESET, settings.preset);
 	impl.parameters->Set(NVSDK_NGX_Parameter_Width, impl.width);
 	impl.parameters->Set(NVSDK_NGX_Parameter_Height, impl.height);
 	impl.parameters->Set(
@@ -786,11 +728,12 @@ static void SetCreateParametersUnsafe(
 
 static bool SetCreateParametersSafely(
 	DLSSNRFilter::Impl& impl,
+	const DLSSNRSettings& settings,
 	DWORD* sehCode
 ) noexcept {
 	*sehCode = 0;
 	__try {
-		SetCreateParametersUnsafe(impl);
+		SetCreateParametersUnsafe(impl, settings);
 		return true;
 	} __except (CaptureNgxException(GetExceptionCode(), sehCode)) {
 		return false;
@@ -878,8 +821,9 @@ static void SetEvaluateParametersUnsafe(
 	impl.parameters->Set(PARAM_INTENSITY, settings.intensity);
 	impl.parameters->Set(PARAM_LOCAL_TONE, settings.localToneStrength);
 	impl.parameters->Set(PARAM_LOCAL_STRUCTURE, settings.localStructureStrength);
+	impl.parameters->Set(PARAM_SKIN_STRUCTURE, settings.skinStructureStrength);
 	impl.parameters->Set(PARAM_AUTO_MASK, settings.useAutoMask ? 1 : 0);
-	impl.parameters->Set(PARAM_UI_CORRECTION, 0);
+	impl.parameters->Set(PARAM_UI_CORRECTION, settings.uiCorrection ? 1 : 0);
 }
 
 static bool SetEvaluateParametersSafely(
@@ -949,16 +893,19 @@ DLSSNRFilter::GetFrameGuidanceRequirements() const noexcept {
 
 bool DLSSNRFilter::Initialize(
 	DeviceResources& resources,
+	NgxD3D12Core& ngxCore,
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output,
 	const DLSSNRSettings& settings
 ) noexcept {
 	_settings = settings;
+	_ngxCore = &ngxCore;
 	_impl.reset();
 	FrameGuidancePerformance::ResetDlssnrGpuTiming();
 	auto impl = std::make_unique<Impl>();
 	impl->device11 = resources.GetD3DDevice();
 	impl->context11 = resources.GetD3DDC();
+	impl->coreOwner = &ngxCore;
 
 	D3D11_TEXTURE2D_DESC inputDesc{};
 	D3D11_TEXTURE2D_DESC outputDesc{};
@@ -982,13 +929,12 @@ bool DLSSNRFilter::Initialize(
 	impl->height = inputDesc.Height;
 	impl->convertInputToRgba = inputDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM;
 
-	HRESULT hr = D3D12CreateDevice(
-		resources.GetGraphicsAdapter(), D3D_FEATURE_LEVEL_11_0,
-		IID_PPV_ARGS(impl->device12.put()));
-	if (FAILED(hr)) {
-		Logger::Get().ComError("Create DLSSNR D3D12 device failed", hr);
+	if (!ngxCore.Acquire(resources, "DLSSNR")) {
 		return false;
 	}
+	impl->coreRegistered = true;
+	impl->device12.copy_from(ngxCore.Device());
+	HRESULT hr = S_OK;
 	D3D12_COMMAND_QUEUE_DESC queueDesc{};
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 	hr = impl->device12->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(impl->queue12.put()));
@@ -1100,49 +1046,18 @@ bool DLSSNRFilter::Initialize(
 
 	const std::filesystem::path applicationDirectory =
 		Win32Helper::GetExePath().parent_path();
-	const std::wstring featurePath = applicationDirectory.wstring();
-	const wchar_t* featurePaths[]{ featurePath.c_str() };
-	NVSDK_NGX_FeatureCommonInfo featureInfo{};
-	featureInfo.PathListInfo.Path = featurePaths;
-	featureInfo.PathListInfo.Length = 1;
 	DWORD sehCode = 0;
-	NVSDK_NGX_Result result = CallCoreInitSafely(
-		"7c134ab9-9677-4af5-a2b2-bca943350861",
-		"Magpie-DLSSNR-2",
-		applicationDirectory.c_str(),
-		impl->device12.get(),
-		&featureInfo,
-		&sehCode);
-	if (sehCode) {
-		Logger::Get().Error(fmt::format(
-			"DLSSNR parameter Core Init raised SEH {:#x}", sehCode));
-		return false;
-	}
-	if (!NGXSucceeded(result)) {
-		Logger::Get().Error(fmt::format(
-			"DLSSNR parameter Core Init failed ({:#x})", (uint32_t)result));
-		return false;
-	}
-	impl->coreInitialized = true;
+	NVSDK_NGX_Result result = NVSDK_NGX_Result_Success;
 
 	if constexpr (!ENABLE_CORE_FEATURE18_DIAGNOSTIC) {
 		if (!InitializeSignedSnippet(*impl, applicationDirectory)) return false;
 	}
 
-	sehCode = 0;
-	result = CallAllocateParametersSafely(&impl->parameters, &sehCode);
-	if (sehCode) {
-		Logger::Get().Error(fmt::format(
-			"DLSSNR AllocateParameters raised SEH {:#x}", sehCode));
-		return false;
-	}
-	if (!NGXSucceeded(result) || !impl->parameters) {
-		Logger::Get().Error(fmt::format(
-			"DLSSNR AllocateParameters failed ({:#x})", (uint32_t)result));
+	if (!ngxCore.AllocateParameters(&impl->parameters, "DLSSNR")) {
 		return false;
 	}
 	sehCode = 0;
-	if (!SetCreateParametersSafely(*impl, &sehCode)) {
+	if (!SetCreateParametersSafely(*impl, _settings, &sehCode)) {
 		Logger::Get().Error(fmt::format(
 			"DLSSNR creation parameter setup raised SEH {:#x}", sehCode));
 		return false;
@@ -1204,14 +1119,14 @@ bool DLSSNRFilter::Initialize(
 	}
 
 	LogDlssnrStatus(fmt::format(
-		"DLSSNR STATUS: Feature=18 created=true path={} size={}x{} preset=default(1) "
-		"style={} intensity={} localTone={} localStructure={} guidanceMode={} autoMask={} "
-		"depthInterval={} disabled=false",
+		"DLSSNR STATUS: Feature=18 created=true path={} size={}x{} preset={} "
+		"style={} intensity={} localTone={} localStructure={} skinStructure={} "
+		"guidanceMode={} autoMask={} uiCorrection={} depthInterval={} disabled=false",
 		ENABLE_CORE_FEATURE18_DIAGNOSTIC ? "core-diagnostic" : "signed-snippet",
-		impl->width, impl->height, _settings.style,
+		impl->width, impl->height, _settings.preset, _settings.style,
 		_settings.intensity, _settings.localToneStrength,
-		_settings.localStructureStrength, _settings.guidanceMode,
-		_settings.useAutoMask,
+		_settings.localStructureStrength, _settings.skinStructureStrength,
+		_settings.guidanceMode, _settings.useAutoMask, _settings.uiCorrection,
 		_settings.depthInferenceInterval));
 	_impl = std::move(impl);
 	return true;
@@ -1222,7 +1137,11 @@ bool DLSSNRFilter::Resize(
 	ID3D11Texture2D* input,
 	ID3D11Texture2D* output
 ) noexcept {
-	return Initialize(resources, input, output, _settings);
+	return _ngxCore && Initialize(resources, *_ngxCore, input, output, _settings);
+}
+
+bool DLSSNRFilter::Drain() noexcept {
+	return !_impl || !_impl->queue12 || !_impl->fence12 || WaitForQueue(*_impl);
 }
 
 static FrameGuidanceView SelectGuidance(
@@ -1464,7 +1383,7 @@ DLSSNRFilter::~DLSSNRFilter() = default;
 FrameGuidanceRequirements
 DLSSNRFilter::GetFrameGuidanceRequirements() const noexcept { return {}; }
 bool DLSSNRFilter::Initialize(
-	DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*,
+	DeviceResources&, NgxD3D12Core&, ID3D11Texture2D*, ID3D11Texture2D*,
 	const DLSSNRSettings&) noexcept {
 	Logger::Get().Error("DLSSNR support is disabled at build time");
 	return false;
@@ -1473,6 +1392,7 @@ bool DLSSNRFilter::Resize(
 	DeviceResources&, ID3D11Texture2D*, ID3D11Texture2D*) noexcept {
 	return false;
 }
+bool DLSSNRFilter::Drain() noexcept { return true; }
 bool DLSSNRFilter::Draw(const NativeEffectDrawContext&) noexcept {
 	return false;
 }

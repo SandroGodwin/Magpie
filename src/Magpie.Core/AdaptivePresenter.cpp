@@ -7,6 +7,10 @@
 
 namespace Magpie {
 
+static bool ShouldLogPresentationDiagnostic(uint32_t count) noexcept {
+	return count <= 3 || count % 120 == 0;
+}
+
 bool AdaptivePresenter::_Initialize(HWND hwndAttach) noexcept {
 	if (ScalingWindow::Get().Options().IsDirectFlipDisabled()) {
 		// 禁用 DirectFlip 时始终使用 DirectComposition 呈现
@@ -131,7 +135,27 @@ bool AdaptivePresenter::BeginFrame(
 		drawOffset = {};
 
 		if (!_isframeLatencyWaited) {
-			_frameLatencyWaitableObject.wait(1000);
+			const DWORD waitResult = WaitForSingleObject(
+				_frameLatencyWaitableObject.get(), 1000);
+			if (waitResult == WAIT_TIMEOUT) {
+				++_frameLatencyWaitTimeoutCount;
+				if (ShouldLogPresentationDiagnostic(_frameLatencyWaitTimeoutCount)) {
+					const ScalingWindow& scalingWindow = ScalingWindow::Get();
+					Logger::Get().Warn(fmt::format(
+						"Swap-chain frame-latency wait timed out: count={} visible={} firstFrame={}",
+						_frameLatencyWaitTimeoutCount,
+						IsWindowVisible(scalingWindow.Handle()) != FALSE,
+						scalingWindow.IsFirstFramePending()));
+				}
+			} else if (waitResult == WAIT_FAILED) {
+				Logger::Get().Win32Error("Swap-chain frame-latency wait failed");
+				return false;
+			} else if (waitResult != WAIT_OBJECT_0) {
+				Logger::Get().Warn(fmt::format(
+					"Unexpected swap-chain frame-latency wait result: 0x{:x}",
+					waitResult));
+				return false;
+			}
 			_isframeLatencyWaited = true;
 		}
 
@@ -142,9 +166,13 @@ bool AdaptivePresenter::BeginFrame(
 	return true;
 }
 
-void AdaptivePresenter::EndFrame(bool waitForGpu) noexcept {
+bool AdaptivePresenter::EndFrame(bool waitForGpu) noexcept {
+	HRESULT endDrawResult = S_OK;
 	if (_isDCompPresenting) {
-		_dcompSurface->EndDraw();
+		endDrawResult = _dcompSurface->EndDraw();
+		if (FAILED(endDrawResult)) {
+			Logger::Get().ComError("DirectComposition EndDraw failed", endDrawResult);
+		}
 	}
 
 	if (waitForGpu || _isResized) {
@@ -173,10 +201,35 @@ void AdaptivePresenter::EndFrame(bool waitForGpu) noexcept {
 	}
 
 	if (_isDCompPresenting) {
-		_dcompDevice->Commit();
+		const HRESULT commitResult = _dcompDevice->Commit();
+		if (FAILED(commitResult)) {
+			Logger::Get().ComError("DirectComposition Commit failed", commitResult);
+		}
+		return SUCCEEDED(endDrawResult) && SUCCEEDED(commitResult);
 	} else {
 		// 两个垂直同步之间允许渲染数帧，SyncInterval = 0 只呈现最新的一帧，旧帧被丢弃
-		_dxgiSwapChain->Present(0, 0);
+		const HRESULT presentResult = _dxgiSwapChain->Present(0, 0);
+		if (presentResult == DXGI_STATUS_OCCLUDED) {
+			++_presentOccludedCount;
+			if (ShouldLogPresentationDiagnostic(_presentOccludedCount)) {
+				const ScalingWindow& scalingWindow = ScalingWindow::Get();
+				Logger::Get().Info(fmt::format(
+					"Swap-chain Present is occluded: count={} visible={} firstFrame={}",
+					_presentOccludedCount,
+					IsWindowVisible(scalingWindow.Handle()) != FALSE,
+					scalingWindow.IsFirstFramePending()));
+			}
+		} else if (FAILED(presentResult)) {
+			++_presentFailureCount;
+			if (ShouldLogPresentationDiagnostic(_presentFailureCount)) {
+				const ScalingWindow& scalingWindow = ScalingWindow::Get();
+				Logger::Get().ComError(fmt::format(
+					"Swap-chain Present failed: count={} visible={} firstFrame={}",
+					_presentFailureCount,
+					IsWindowVisible(scalingWindow.Handle()) != FALSE,
+					scalingWindow.IsFirstFramePending()), presentResult);
+			}
+		}
 		_isframeLatencyWaited = false;
 
 		// 丢弃渲染目标的内容
@@ -193,6 +246,8 @@ void AdaptivePresenter::EndFrame(bool waitForGpu) noexcept {
 			_dcompVisual->SetContent(nullptr);
 			_dcompDevice->Commit();
 		}
+
+		return SUCCEEDED(presentResult);
 	}
 }
 

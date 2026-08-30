@@ -4,6 +4,7 @@
 namespace Magpie {
 
 class DeviceResources;
+class NgxD3D12Core;
 
 struct DLSSFrameGenerationSettings {
 	uint32_t multiplier = 2;
@@ -25,12 +26,14 @@ public:
 
 	bool Initialize(
 		DeviceResources& resources,
+		NgxD3D12Core& ngxCore,
 		ID3D11Texture2D* input,
 		FrameGuidanceExtent guidanceExtent,
 		const DLSSFrameGenerationSettings& settings
 	) noexcept;
 	bool Resize(
 		DeviceResources& resources,
+		NgxD3D12Core& ngxCore,
 		ID3D11Texture2D* input,
 		FrameGuidanceExtent guidanceExtent
 	) noexcept;
@@ -41,12 +44,14 @@ public:
 		const FrameGuidanceView& zeroGuidance,
 		const PublishCallback& publishGeneratedFrame) noexcept;
 	void RequestHistoryReset() noexcept;
+	bool Drain() noexcept;
 
 	FrameGuidanceRequirements GetFrameGuidanceRequirements() const noexcept;
 	const DLSSFrameGenerationSettings& Settings() const noexcept {
 		return _requestedSettings;
 	}
 	uint32_t Multiplier() const noexcept;
+	uint32_t MaxSupportedMultiplier() const noexcept;
 
 private:
 	std::unique_ptr<Impl> _impl;

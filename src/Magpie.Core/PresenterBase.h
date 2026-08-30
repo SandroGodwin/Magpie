@@ -16,7 +16,16 @@ public:
 		POINT& drawOffset
 	) noexcept = 0;
 
-	virtual void EndFrame(bool waitForGpu = false) noexcept = 0;
+	// Returns true when the frame was submitted to the presentation backend.
+	// Successful status codes such as DXGI_STATUS_OCCLUDED still count as a
+	// submission so a deliberately hidden first-frame window can be shown.
+	virtual bool EndFrame(bool waitForGpu = false) noexcept = 0;
+
+	// A presenter with a frame-latency waitable object already provides queue
+	// capacity pacing in BeginFrame. DLSSFG must not add a DWM wait on top of it.
+	virtual bool UsesFrameLatencyWaitableObject() const noexcept {
+		return false;
+	}
 
 	virtual bool OnResize() noexcept = 0;
 
