@@ -18,6 +18,7 @@
 - [实验分支 Git 工作流](GIT-WORKFLOW.md)
 - [实验分支交接](../EXPERIMENTAL_HANDOFF_ZH.md)
 - [下一版 Release Notes](../RELEASE_NOTES_NEXT.md)
+- [v0.5.7 实验版说明](../RELEASE_NOTES_v0.5.7-experimental.md)
 - [v0.5.6 实验版说明](../RELEASE_NOTES_v0.5.6-experimental.md)
 - [v0.5.3 实验版说明](../RELEASE_NOTES_v0.5.3-experimental.md)
 - [实验包 README](../README-EXPERIMENTAL-RELEASE.txt)

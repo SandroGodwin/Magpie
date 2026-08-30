@@ -16,7 +16,7 @@
 
 DLSSFG 当前保留 CPU Fence，并通过 D3D11/D3D12 共享资源让最终颜色与源分辨率 Guidance 使用同一捕获帧 ID。失败时依次重置历史、重建一次；仍失败则只在当前缩放会话禁用帧生成并继续显示真实帧，避免无限重试把窗口拖死。
 
-内置更新检查自 0.5.3-experimental 起仍暂时关闭，应用不会后台联网检查，也不显示手动检查入口。当前公开源码版本为 v0.5.6-experimental；Release 使用的社区修改版 `nvngx_dlssnr.dll` 不进入源码仓库。
+内置更新检查自 0.5.3-experimental 起仍暂时关闭，应用不会后台联网检查，也不显示手动检查入口。当前公开源码版本为 v0.5.7-experimental；Release 使用的社区修改版 `nvngx_dlssnr.dll` 不进入源码仓库。
 
 ## 关键位置
 
