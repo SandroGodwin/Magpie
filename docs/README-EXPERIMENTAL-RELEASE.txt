@@ -1,4 +1,4 @@
-Magpie Experimental v0.5.7 x64
+Magpie Experimental v0.5.8 x64
 
 安装 / Installation
 
