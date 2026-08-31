@@ -4,15 +4,64 @@
 namespace Magpie {
 
 enum class InitialWindowedScaleFactor {
-	Auto,
-	x1_25,
-	x1_5,
-	x1_75,
-	x2,
-	x3,
-	Custom,
+	Auto = 0,
+	x1_25 = 1,
+	x1_5 = 2,
+	x1_75 = 3,
+	x2 = 4,
+	x3 = 5,
+	Custom = 6,
+	// 配置文件直接保存枚举值，新选项必须追加以保持旧配置兼容
+	x1 = 7,
 	COUNT
 };
+
+// 下拉框按倍率排序，但持久化枚举不能重排，因此在 UI 索引和枚举值之间显式转换。
+constexpr int InitialWindowedScaleFactorToSelectedIndex(InitialWindowedScaleFactor factor) noexcept {
+	switch (factor) {
+	case InitialWindowedScaleFactor::Auto:
+		return 0;
+	case InitialWindowedScaleFactor::x1:
+		return 1;
+	case InitialWindowedScaleFactor::x1_25:
+		return 2;
+	case InitialWindowedScaleFactor::x1_5:
+		return 3;
+	case InitialWindowedScaleFactor::x1_75:
+		return 4;
+	case InitialWindowedScaleFactor::x2:
+		return 5;
+	case InitialWindowedScaleFactor::x3:
+		return 6;
+	case InitialWindowedScaleFactor::Custom:
+		return 7;
+	default:
+		return 0;
+	}
+}
+
+constexpr InitialWindowedScaleFactor InitialWindowedScaleFactorFromSelectedIndex(int index) noexcept {
+	switch (index) {
+	case 0:
+		return InitialWindowedScaleFactor::Auto;
+	case 1:
+		return InitialWindowedScaleFactor::x1;
+	case 2:
+		return InitialWindowedScaleFactor::x1_25;
+	case 3:
+		return InitialWindowedScaleFactor::x1_5;
+	case 4:
+		return InitialWindowedScaleFactor::x1_75;
+	case 5:
+		return InitialWindowedScaleFactor::x2;
+	case 6:
+		return InitialWindowedScaleFactor::x3;
+	case 7:
+		return InitialWindowedScaleFactor::Custom;
+	default:
+		return InitialWindowedScaleFactor::Auto;
+	}
+}
 
 enum class CursorScaling {
 	x0_5,

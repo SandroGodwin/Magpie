@@ -244,6 +244,7 @@
 						          SelectedIndex="{x:Bind ViewModel.InitialWindowedScaleFactor, Mode=TwoWay}"
 						          SelectionChanged="InitialWindowedScaleFactorComboBox_SelectionChanged">
 							<ComboBoxItem x:Uid="Profile_WindowedScaling_InitialScaleFactor_Auto" />
+							<x:String>1x</x:String>
 							<x:String>1.25x</x:String>
 							<x:String>1.5x</x:String>
 							<x:String>1.75x</x:String>

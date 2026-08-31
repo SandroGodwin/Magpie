@@ -442,15 +442,15 @@ void ProfileViewModel::MultiMonitorUsage(int value) {
 }
 
 int ProfileViewModel::InitialWindowedScaleFactor() const noexcept {
-	return (int)_data->initialWindowedScaleFactor;
+	return InitialWindowedScaleFactorToSelectedIndex(_data->initialWindowedScaleFactor);
 }
 
 void ProfileViewModel::InitialWindowedScaleFactor(int value) {
-	if (value < 0) {
+	if (value < 0 || value >= (int)InitialWindowedScaleFactor::COUNT) {
 		return;
 	}
 
-	::Magpie::InitialWindowedScaleFactor factor = (::Magpie::InitialWindowedScaleFactor)value;
+	::Magpie::InitialWindowedScaleFactor factor = InitialWindowedScaleFactorFromSelectedIndex(value);
 	if (_data->initialWindowedScaleFactor == factor) {
 		return;
 	}

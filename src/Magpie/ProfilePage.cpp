@@ -28,7 +28,9 @@ void ProfilePage::NumberBox_Loaded(IInspectable const& sender, RoutedEventArgs c
 }
 
 void ProfilePage::InitialWindowedScaleFactorComboBox_SelectionChanged(IInspectable const&, SelectionChangedEventArgs const&) {
-	if ((InitialWindowedScaleFactor)_viewModel->InitialWindowedScaleFactor() == InitialWindowedScaleFactor::Custom) {
+	if (InitialWindowedScaleFactorFromSelectedIndex(_viewModel->InitialWindowedScaleFactor()) ==
+		InitialWindowedScaleFactor::Custom)
+	{
 		InitialWindowedScaleFactorComboBox().MinWidth(0);
 		CustomInitialWindowedScaleFactorNumberBox().Visibility(Visibility::Visible);
 		CustomInitialWindowedScaleFactorLabel().Visibility(Visibility::Visible);
