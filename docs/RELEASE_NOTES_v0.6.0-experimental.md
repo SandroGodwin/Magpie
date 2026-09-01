@@ -24,7 +24,7 @@
 - `Magpie-v0.6.0-TensorRT-Depth-Components-x64.7z.001`
 - `Magpie-v0.6.0-TensorRT-Depth-Components-x64.7z.002`
 
-请下载全部分卷，将它们放在同一目录，并使用 7-Zip 从 `.7z.001` 开始解压。随后按照包内《安装说明.txt》安装。不要将其中的 CUDA、cuDNN 或 TensorRT 文件与其他版本混用。
+请下载全部分卷，将它们放在同一目录，并使用 7-Zip 从 `.7z.001` 开始解压。完全退出 Magpie 后，将解压得到的全部文件和目录直接复制到 `Magpie.exe` 所在目录，保持原有目录结构并允许覆盖同名文件。不要只复制个别 DLL，也不要与其他版本的 CUDA、cuDNN 或 TensorRT 文件混用。
 
 ### `DLSSNR-DLL-Options-310.8.0.0.zip`
 
