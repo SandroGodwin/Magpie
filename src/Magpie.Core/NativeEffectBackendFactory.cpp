@@ -167,8 +167,12 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 		} else if (effectName.ends_with("_Ultra")) {
 			qualityLevel = 11;
 		}
-		return CreateBackend<RTXVideoDenoiser>(
-			effectName, resources, input, output, qualityLevel);
+		auto backend = std::make_unique<RTXVideoDenoiser>();
+		if (!backend->Initialize(resources, input, output, qualityLevel)) {
+			Logger::Get().Error(fmt::format("Initialize native effect {} failed", effectName));
+			return { true, nullptr, backend->InitializationError() };
+		}
+		return { true, std::move(backend) };
 	}
 
 	return {};

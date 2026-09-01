@@ -790,6 +790,9 @@
   <data name="Message_CreateFenceFailed" xml:space="preserve">
     <value>当前显卡不支持 ID3D11Device5::CreateFence，请尝试切换显卡或更新驱动。</value>
   </data>
+  <data name="Message_NvidiaVsrPathUnsupported" xml:space="preserve">
+    <value>NVIDIA VSR 初始化失败（错误 -2）。请将 Magpie 完整解压到仅含英文字母和数字的路径，所有上级目录都不要包含中文或特殊字符，例如 C:\Magpie\，然后重新运行。</value>
+  </data>
   <data name="Message_ScalingFailed" xml:space="preserve">
     <value>缩放失败</value>
   </data>

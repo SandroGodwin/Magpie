@@ -1,5 +1,6 @@
 #pragma once
 #include "NativeEffectBackend.h"
+#include "ScalingOptions.h"
 
 namespace Magpie {
 
@@ -28,11 +29,13 @@ public:
 	) noexcept override;
 
 	bool Draw(const NativeEffectDrawContext& context) noexcept override;
+	ScalingError InitializationError() const noexcept { return _initializationError; }
 
 private:
 	struct Impl;
 	std::unique_ptr<Impl> _impl;
 	uint32_t _qualityLevel = 8;
+	ScalingError _initializationError = ScalingError::NoError;
 };
 
 }

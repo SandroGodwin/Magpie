@@ -73,6 +73,7 @@ bool RTXVideoDenoiser::Initialize(
 ) noexcept {
 	_impl.reset();
 	_qualityLevel = qualityLevel;
+	_initializationError = ScalingError::NoError;
 
 	const bool isUpscaleQuality = qualityLevel >= 1 && qualityLevel <= 4;
 	const bool isDenoiseQuality = qualityLevel >= 8 && qualityLevel <= 11;
@@ -114,9 +115,20 @@ bool RTXVideoDenoiser::Initialize(
 		!VFXSucceeded(NvCVImage_Alloc(&impl->inputGPU, inputDesc.Width, inputDesc.Height,
 			NVCV_RGBA, NVCV_U8, NVCV_INTERLEAVED, NVCV_GPU, 32), "NvCVImage_Alloc(input)") ||
 		!VFXSucceeded(NvCVImage_Alloc(&impl->outputGPU, outputDesc.Width, outputDesc.Height,
-			NVCV_RGBA, NVCV_U8, NVCV_INTERLEAVED, NVCV_GPU, 32), "NvCVImage_Alloc(output)") ||
-		!VFXSucceeded(NvVFX_CreateEffect("VideoSuperRes", &impl->effect), "NvVFX_CreateEffect(VideoSuperRes)") ||
-		!VFXSucceeded(NvVFX_SetImage(impl->effect, NVVFX_INPUT_IMAGE, &impl->inputGPU),
+			NVCV_RGBA, NVCV_U8, NVCV_INTERLEAVED, NVCV_GPU, 32), "NvCVImage_Alloc(output)")) {
+		return false;
+	}
+
+	const NvCV_Status createEffectStatus =
+		NvVFX_CreateEffect("VideoSuperRes", &impl->effect);
+	if (!VFXSucceeded(createEffectStatus, "NvVFX_CreateEffect(VideoSuperRes)")) {
+		if (createEffectStatus == NVCV_ERR_UNIMPLEMENTED) {
+			_initializationError = ScalingError::NvidiaVsrPathUnsupported;
+		}
+		return false;
+	}
+
+	if (!VFXSucceeded(NvVFX_SetImage(impl->effect, NVVFX_INPUT_IMAGE, &impl->inputGPU),
 			"NvVFX_SetImage(input)") ||
 		!VFXSucceeded(NvVFX_SetImage(impl->effect, NVVFX_OUTPUT_IMAGE, &impl->outputGPU),
 			"NvVFX_SetImage(output)") ||

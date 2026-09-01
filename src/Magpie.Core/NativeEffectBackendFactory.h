@@ -1,4 +1,5 @@
 #pragma once
+#include "ScalingOptions.h"
 
 namespace Magpie {
 
@@ -10,6 +11,7 @@ struct EffectOption;
 struct NativeEffectBackendResult {
 	bool recognized = false;
 	std::unique_ptr<NativeEffectBackend> backend;
+	ScalingError error = ScalingError::NoError;
 };
 
 NativeEffectBackendResult CreateNativeEffectBackend(

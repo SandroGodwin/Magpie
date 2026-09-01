@@ -143,7 +143,9 @@ enum class ScalingError {
 	// FrameSource 初始化失败
 	CaptureFailed,
 	// ID3D11Device5::CreateFence 失败
-	CreateFenceFailed
+	CreateFenceFailed,
+	// NVIDIA VSR 运行库无法从当前程序路径完成初始化
+	NvidiaVsrPathUnsupported
 };
 
 struct ScalingFlags {

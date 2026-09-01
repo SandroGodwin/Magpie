@@ -869,6 +869,9 @@ ID3D11Texture2D* Renderer::_BuildEffects() noexcept {
 			_effectDrawers[i].GetTexture(0),
 			_effectDrawers[i].GetOutputTexture());
 		if (nativeBackend.recognized && !nativeBackend.backend) {
+			if (nativeBackend.error != ScalingError::NoError) {
+				_backendInitError = nativeBackend.error;
+			}
 			return nullptr;
 		}
 		_nativeEffectBackends[i] = std::move(nativeBackend.backend);

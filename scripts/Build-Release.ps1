@@ -5,6 +5,7 @@ param(
     [string]$Platform = "x64",
     [string]$Version,
     [switch]$AllowDirtySource,
+    [switch]$ExcludeTensorRTDepthRuntime,
     [switch]$SkipBuild
 )
 
@@ -237,10 +238,26 @@ foreach ($runtimeStateName in @("cache", "logs")) {
     }
 }
 
+if ($ExcludeTensorRTDepthRuntime) {
+    foreach ($optionalPath in @(
+        "FrameGuidance\TensorRT",
+        "NVIDIA-TensorRT-Runtime-Licenses"
+    )) {
+        $fullOptionalPath = Join-Path $stagingDir $optionalPath
+        if (Test-Path -LiteralPath $fullOptionalPath) {
+            Remove-Item -LiteralPath $fullOptionalPath -Recurse -Force
+        }
+    }
+}
+
 Copy-Item -LiteralPath (Join-Path $sourceRoot "LICENSE") `
     -Destination (Join-Path $stagingDir "LICENSE-Magpie.txt")
 Copy-Item -LiteralPath (Join-Path $sourceRoot "docs\README-EXPERIMENTAL-RELEASE.txt") `
     -Destination (Join-Path $stagingDir "README-Experimental.txt")
+$packagedReadmePath = Join-Path $stagingDir "README-Experimental.txt"
+$packagedReadme = Get-Content -LiteralPath $packagedReadmePath -Raw -Encoding UTF8
+$packagedReadme = $packagedReadme -replace '^Magpie Experimental v[^ ]+ x64', "Magpie Experimental v$Version x64"
+Set-Content -LiteralPath $packagedReadmePath -Value $packagedReadme -Encoding UTF8 -NoNewline
 Copy-Item -LiteralPath (Join-Path $sourceRoot "docs\THIRD_PARTY_AND_REDISTRIBUTION.md") `
     -Destination (Join-Path $stagingDir "THIRD-PARTY-NOTICES.md")
 

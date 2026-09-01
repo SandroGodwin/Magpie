@@ -190,6 +190,9 @@ static void ShowError(HWND hWnd, ScalingError error) noexcept {
 	case ScalingError::CreateFenceFailed:
 		key = L"Message_CreateFenceFailed";
 		break;
+	case ScalingError::NvidiaVsrPathUnsupported:
+		key = L"Message_NvidiaVsrPathUnsupported";
+		break;
 	default:
 		assert(false);
 		return;

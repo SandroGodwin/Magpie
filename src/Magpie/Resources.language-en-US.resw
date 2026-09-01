@@ -790,6 +790,9 @@
   <data name="Message_CreateFenceFailed" xml:space="preserve">
     <value>The current graphics card does not support ID3D11Device5::CreateFence. Please try switching the graphics card or updating the drivers.</value>
   </data>
+  <data name="Message_NvidiaVsrPathUnsupported" xml:space="preserve">
+    <value>NVIDIA VSR initialization failed (error -2). Fully extract Magpie to a path containing only English letters and numbers. No parent directory may contain Chinese characters or special characters, then run Magpie again.</value>
+  </data>
   <data name="Message_ScalingFailed" xml:space="preserve">
     <value>Scaling failed</value>
   </data>
