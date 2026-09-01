@@ -73,8 +73,11 @@ public:
 			ORT_LOGGING_LEVEL_WARNING,
 			_tensorRT ? "MagpieDAV2TensorRT" : "MagpieDAV2DirectML", &_env)) ||
 			!_Check(_api->CreateSessionOptions(&_sessionOptions)) ||
+			// ORT_ENABLE_BASIC: SimplifiedLayerNormFusion 在 DAV2 模型上触发 ORT
+			// graph_utils.cc GetIndexFromName 断言（TRT EP 分区路径），降级到 BASIC 绕开；
+			// TRT EP 有自己的 kernel，扩展级图融合收益极小
 			!_Check(_api->SetSessionGraphOptimizationLevel(
-				_sessionOptions, ORT_ENABLE_ALL)) ||
+				_sessionOptions, ORT_ENABLE_BASIC)) ||
 			!_Check(_api->AddFreeDimensionOverrideByName(
 				_sessionOptions, "batch_size", 1)) ||
 			!_Check(_api->AddFreeDimensionOverrideByName(
@@ -179,9 +182,10 @@ private:
 		const std::string deviceId = std::to_string(config.adapterIndex);
 		const std::string fixedShape = fmt::format(
 			"pixel_values:1x3x{}x{}", config.inputHeight, config.inputWidth);
+		// 布尔键必须用 True/False（与官方 ORT TRT EP 的解析保持一致）
 		const char* values[]{
-			deviceId.c_str(), "1", "0", "1", cachePath.c_str(),
-			"1", cachePath.c_str(), "0", "3",
+			deviceId.c_str(), "True", "False", "True", cachePath.c_str(),
+			"True", cachePath.c_str(), "False", "3",
 			fixedShape.c_str(), fixedShape.c_str(), fixedShape.c_str()
 		};
 		const bool result = _Check(_api->UpdateTensorRTProviderOptions(
