@@ -21,7 +21,11 @@ $buildOutput = Join-Path $sourceRoot "bin\$Platform\$Configuration"
 
 function Find-MSBuild {
     $command = Get-Command msbuild.exe -ErrorAction SilentlyContinue
-    if ($command) { return $command.Source }
+    if ($command) {
+        $amd64Command = Join-Path (Split-Path $command.Source -Parent) "amd64\MSBuild.exe"
+        if (Test-Path -LiteralPath $amd64Command) { return $amd64Command }
+        return $command.Source
+    }
 
     $vswhereCandidates = @(
         (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"),
@@ -29,6 +33,14 @@ function Find-MSBuild {
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 
     foreach ($vswhere in $vswhereCandidates) {
+        $installationPath = & $vswhere -latest -products * `
+            -requires Microsoft.Component.MSBuild -property installationPath |
+            Select-Object -First 1
+        if ($installationPath) {
+            $amd64MsBuild = Join-Path $installationPath "MSBuild\Current\Bin\amd64\MSBuild.exe"
+            if (Test-Path -LiteralPath $amd64MsBuild) { return $amd64MsBuild }
+        }
+
         $result = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild `
             -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
         if ($result -and (Test-Path -LiteralPath $result)) { return $result }
