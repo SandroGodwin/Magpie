@@ -34,6 +34,6 @@
 
 ## 文件校验
 
-发布附件的 SHA-256 将在完成正式打包后列于此处。
+发布附件的 SHA-256 校验值见本 Release 页面。
 
 Contributor: [HexBen123](https://github.com/HexBen123)
