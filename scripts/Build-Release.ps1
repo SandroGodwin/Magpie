@@ -4,6 +4,8 @@ param(
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
     [string]$Version,
+    [ValidateRange(1, 64)]
+    [int]$MaxCpuCount = 2,
     [switch]$AllowDirtySource,
     [switch]$ExcludeTensorRTDepthRuntime,
     [switch]$SkipBuild
@@ -179,7 +181,7 @@ if (!$SkipBuild) {
     Add-CMakeToPath
 
     $msbuildArgs = @(
-        "Magpie.slnx", "/m", "/nr:false", "/v:minimal", "/t:Rebuild",
+        "Magpie.slnx", "/m:$MaxCpuCount", "/nr:false", "/v:minimal", "/t:Rebuild",
         "/p:Configuration=$Configuration", "/p:Platform=$Platform",
         "/p:MajorVersion=$($versionMatch.Groups[1].Value)",
         "/p:MinorVersion=$($versionMatch.Groups[2].Value)",
