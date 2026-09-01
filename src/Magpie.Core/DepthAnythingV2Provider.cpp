@@ -390,6 +390,12 @@ struct DepthAnythingV2Provider::Impl {
 		uint64_t frameId = 0;
 	};
 
+	enum class BackendInitializationResult {
+		Ready,
+		Failed,
+		Stopped
+	};
+
 	bool CreateTextures(FrameGuidanceExtent newExtent) noexcept {
 		extent = newExtent;
 		if (!device || !context || !extent.IsValid()) return false;
@@ -560,11 +566,13 @@ struct DepthAnythingV2Provider::Impl {
 		return false;
 	}
 
-	bool InitializeBackends() noexcept {
+	BackendInitializationResult InitializeBackends() noexcept {
 		uint32_t adapterIndex = 0;
 		bool isNvidia = false;
 		LUID adapterLuid{};
-		if (!FindAdapter(adapterIndex, isNvidia, adapterLuid)) return false;
+		if (!FindAdapter(adapterIndex, isNvidia, adapterLuid)) {
+			return BackendInitializationResult::Failed;
+		}
 
 		const auto exeDirectory = Win32Helper::GetExePath().parent_path();
 		const auto providerDirectory = exeDirectory / L"FrameGuidance";
@@ -593,9 +601,25 @@ struct DepthAnythingV2Provider::Impl {
 			.inputHeight = inferenceHeight,
 			.isNvidiaAdapter = isNvidia && cuda.valid
 		};
-		tensorRT = CreateTensorRTDepthBackend();
 		const uint64_t before = QueryVideoMemoryUsage(adapter);
-		const bool tensorRTReady = tensorRT && tensorRT->Initialize(backendConfig);
+		tensorRT = AcquireSharedTensorRTDepthBackend(backendConfig);
+		while (tensorRT &&
+			tensorRT->State() == SharedDepthBackendState::Initializing) {
+			std::unique_lock lock(workerMutex);
+			if (workerCv.wait_for(lock, std::chrono::milliseconds(20), [&] {
+				return workerStop;
+			})) {
+				Logger::Get().Info(
+					"Frame Guidance stopped waiting for shared TensorRT initialization");
+				return BackendInitializationResult::Stopped;
+			}
+		}
+		{
+			std::lock_guard lock(workerMutex);
+			if (workerStop) return BackendInitializationResult::Stopped;
+		}
+		const bool tensorRTReady = tensorRT &&
+			tensorRT->State() == SharedDepthBackendState::Ready;
 		const uint64_t afterTensorRT = QueryVideoMemoryUsage(adapter);
 		bool directMLReady = false;
 		if (!tensorRTReady) {
@@ -617,9 +641,10 @@ struct DepthAnythingV2Provider::Impl {
 			cuda.computeMajor, cuda.computeMinor, cuda.deviceIndex, tensorRTReady,
 			VideoMemoryDeltaMiB(afterTensorRT, before), directMLReady,
 			VideoMemoryDeltaMiB(afterDirectML, afterTensorRT)));
-		active = tensorRTReady ? tensorRT.get() :
-			(directMLReady ? directML.get() : nullptr);
-		return active != nullptr;
+		useTensorRT = tensorRTReady;
+		return tensorRTReady || directMLReady ?
+			BackendInitializationResult::Ready :
+			BackendInitializationResult::Failed;
 	}
 
 	bool EnsurePreprocessSource(ID3D11Texture2D* color, bool& sourceIsBgra) noexcept {
@@ -776,7 +801,7 @@ struct DepthAnythingV2Provider::Impl {
 
 	bool InitializeDirectMLFallback() noexcept {
 		if (directML && directML->IsReady()) {
-			active = directML.get();
+			useTensorRT = false;
 			return true;
 		}
 		const auto exeDirectory = Win32Helper::GetExePath().parent_path();
@@ -791,37 +816,56 @@ struct DepthAnythingV2Provider::Impl {
 		directML = CreateDirectMLDepthBackend();
 		if (!directML || !directML->Initialize(config)) return false;
 		backendConfig = std::move(config);
-		active = directML.get();
+		useTensorRT = false;
 		return true;
+	}
+
+	bool RunInference(
+		const DepthInferenceInput& input,
+		DepthInferenceOutput& output
+	) noexcept {
+		return useTensorRT ?
+			(tensorRT && tensorRT->Run(input, output)) :
+			(directML && directML->Run(input, output));
+	}
+
+	std::string_view ActiveBackendName() const noexcept {
+		return useTensorRT ?
+			(tensorRT ? tensorRT->Name() : "unavailable") :
+			(directML ? directML->Name() : "unavailable");
 	}
 
 	void WorkerMain() noexcept {
 		const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 		workerBusy.store(true, std::memory_order_release);
-		bool initialized = InitializeBackends();
-		if (initialized) {
+		const BackendInitializationResult initialization = InitializeBackends();
+		if (initialization == BackendInitializationResult::Stopped) {
+			workerBusy.store(false, std::memory_order_release);
+			if (SUCCEEDED(apartment)) CoUninitialize();
+			return;
+		}
+		bool initialized = initialization == BackendInitializationResult::Ready;
+		// The process-wide TensorRT backend is warmed once by its initializer.
+		// DirectML remains session-owned and therefore needs a local warmup.
+		if (initialized && !useTensorRT) {
 			std::vector<float> warmup(
 				size_t(inferenceWidth) * inferenceHeight * 3, 0.0f);
 			DepthInferenceOutput ignored;
 			const auto start = std::chrono::steady_clock::now();
-			if (!active->Run({
+			initialized = RunInference({
 				.values = warmup.data(),
 				.valueCount = warmup.size(),
 				.width = inferenceWidth,
 				.height = inferenceHeight
-			}, ignored) && active == tensorRT.get()) {
-				initialized = InitializeDirectMLFallback() && active->Run({
-					.values = warmup.data(),
-					.valueCount = warmup.size(),
-					.width = inferenceWidth,
-					.height = inferenceHeight
-				}, ignored);
-			}
+			}, ignored);
 			Logger::Get().Info(fmt::format(
 				"Frame Guidance DAV2 async warmup backend={} result={} time={:.1f} ms",
-				active ? active->Name() : "unavailable", initialized,
+				ActiveBackendName(), initialized,
 				std::chrono::duration<double, std::milli>(
 					std::chrono::steady_clock::now() - start).count()));
+		} else if (initialized) {
+			Logger::Get().Info(
+				"Frame Guidance DAV2 using process-wide prewarmed TensorRT backend");
 		}
 		workerReady.store(initialized, std::memory_order_release);
 		workerBusy.store(false, std::memory_order_release);
@@ -849,7 +893,7 @@ struct DepthAnythingV2Provider::Impl {
 			result.frameId = job.frameId;
 			const auto workerStart = std::chrono::steady_clock::now();
 			const auto inferenceStart = workerStart;
-			bool succeeded = active->Run({
+			bool succeeded = RunInference({
 				.values = job.values.data(),
 				.valueCount = job.values.size(),
 				.width = inferenceWidth,
@@ -857,11 +901,11 @@ struct DepthAnythingV2Provider::Impl {
 			}, result.inference);
 			result.inferenceMs = std::chrono::duration<double, std::milli>(
 				std::chrono::steady_clock::now() - inferenceStart).count();
-			if (!succeeded && active == tensorRT.get() &&
+			if (!succeeded && useTensorRT &&
 				InitializeDirectMLFallback()) {
 				result.inference = {};
 				const auto fallbackStart = std::chrono::steady_clock::now();
-				succeeded = active->Run({
+				succeeded = RunInference({
 					.values = job.values.data(),
 					.valueCount = job.values.size(),
 					.width = inferenceWidth,
@@ -877,7 +921,7 @@ struct DepthAnythingV2Provider::Impl {
 				std::chrono::steady_clock::now() - percentileStart).count();
 			result.workerTotalMs = std::chrono::duration<double, std::milli>(
 				std::chrono::steady_clock::now() - workerStart).count();
-			result.backend = active ? std::string(active->Name()) : "unavailable";
+			result.backend = std::string(ActiveBackendName());
 			if (succeeded) {
 				std::lock_guard lock(workerMutex);
 				if (completedResult) ++droppedResultCount;
@@ -885,7 +929,7 @@ struct DepthAnythingV2Provider::Impl {
 			} else {
 				Logger::Get().Warn(fmt::format(
 					"Frame Guidance {} async inference failed at frameId={}",
-					active ? active->Name() : "depth", job.frameId));
+					ActiveBackendName(), job.frameId));
 			}
 			workerBusy.store(false, std::memory_order_release);
 		}
@@ -1161,9 +1205,8 @@ struct DepthAnythingV2Provider::Impl {
 	winrt::com_ptr<ID3D11Buffer> preprocessParams;
 	winrt::com_ptr<ID3D11Buffer> postprocessParams;
 	winrt::com_ptr<ID3D11Buffer> temporalParams;
-	std::unique_ptr<IDepthInferenceBackend> tensorRT;
+	std::shared_ptr<SharedTensorRTDepthBackend> tensorRT;
 	std::unique_ptr<IDepthInferenceBackend> directML;
-	IDepthInferenceBackend* active = nullptr;
 	DepthInferenceConfig backendConfig{};
 	std::mutex workerMutex;
 	std::condition_variable workerCv;
@@ -1200,6 +1243,7 @@ struct DepthAnythingV2Provider::Impl {
 	bool percentilesValid = false;
 	bool historyValid = false;
 	bool hasLearnedDepth = false;
+	bool useTensorRT = false;
 };
 
 DepthAnythingV2Provider::DepthAnythingV2Provider(uint32_t inferenceInterval) :
@@ -1361,7 +1405,7 @@ bool DepthAnythingV2Provider::Resize(
 	_impl->StopWorker();
 	_impl->tensorRT.reset();
 	_impl->directML.reset();
-	_impl->active = nullptr;
+	_impl->useTensorRT = false;
 	++_impl->generation;
 	_impl->captureLatencyTimings = {};
 	_impl->readbackCopyTimings = {};

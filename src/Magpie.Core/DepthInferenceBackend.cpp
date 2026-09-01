@@ -6,6 +6,10 @@
 #include <onnxruntime_c_api.h>
 #include <dml_provider_factory.h>
 #include <d3d12.h>
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 
 namespace Magpie {
 
@@ -321,6 +325,166 @@ std::unique_ptr<IDepthInferenceBackend> CreateDirectMLDepthBackend() {
 	return std::make_unique<OnnxRuntimeDepthBackend>(false);
 }
 
+struct SharedTensorRTDepthBackend::Impl {
+	explicit Impl(DepthInferenceConfig value) : config(std::move(value)) {}
+
+	DepthInferenceConfig config;
+	std::unique_ptr<IDepthInferenceBackend> backend;
+	std::mutex runMutex;
+	std::atomic<SharedDepthBackendState> state{
+		SharedDepthBackendState::Initializing
+	};
+};
+
+SharedTensorRTDepthBackend::SharedTensorRTDepthBackend(
+	DepthInferenceConfig config
+) : _impl(std::make_unique<Impl>(std::move(config))) {}
+
+SharedTensorRTDepthBackend::~SharedTensorRTDepthBackend() = default;
+
+SharedDepthBackendState SharedTensorRTDepthBackend::State() const noexcept {
+	return _impl->state.load(std::memory_order_acquire);
+}
+
+std::string_view SharedTensorRTDepthBackend::Name() const noexcept {
+	return _impl->backend ? _impl->backend->Name() : "TensorRT FP16";
+}
+
+bool SharedTensorRTDepthBackend::Run(
+	const DepthInferenceInput& input,
+	DepthInferenceOutput& output
+) noexcept {
+	if (State() != SharedDepthBackendState::Ready) return false;
+	std::lock_guard lock(_impl->runMutex);
+	if (State() != SharedDepthBackendState::Ready || !_impl->backend) return false;
+	const bool succeeded = _impl->backend->Run(input, output);
+	if (!succeeded) {
+		_impl->state.store(
+			SharedDepthBackendState::Failed, std::memory_order_release);
+		Logger::Get().Warn(
+			"Frame Guidance shared TensorRT backend entered failed state");
+	}
+	return succeeded;
+}
+
+void SharedTensorRTDepthBackend::Initialize() noexcept {
+	const auto totalStart = std::chrono::steady_clock::now();
+	std::unique_ptr<IDepthInferenceBackend> backend =
+		CreateTensorRTDepthBackend();
+	bool initialized = backend && backend->Initialize(_impl->config);
+	if (initialized) {
+		std::vector<float> warmup(
+			size_t(_impl->config.inputWidth) * _impl->config.inputHeight * 3,
+			0.0f);
+		DepthInferenceOutput ignored;
+		const auto start = std::chrono::steady_clock::now();
+		initialized = backend->Run({
+			.values = warmup.data(),
+			.valueCount = warmup.size(),
+			.width = _impl->config.inputWidth,
+			.height = _impl->config.inputHeight
+		}, ignored);
+		Logger::Get().Info(fmt::format(
+			"Frame Guidance shared TensorRT warmup result={} time={:.1f} ms",
+			initialized,
+			std::chrono::duration<double, std::milli>(
+				std::chrono::steady_clock::now() - start).count()));
+	}
+	if (initialized) _impl->backend = std::move(backend);
+	_impl->state.store(
+		initialized ? SharedDepthBackendState::Ready :
+			SharedDepthBackendState::Failed,
+		std::memory_order_release);
+	Logger::Get().Info(fmt::format(
+		"Frame Guidance shared TensorRT initialization completed state={} "
+		"input={}x{} total={:.1f} ms",
+		initialized ? "ready" : "failed", _impl->config.inputWidth,
+		_impl->config.inputHeight,
+		std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - totalStart).count()));
+}
+
+namespace {
+
+struct SharedTensorRTRegistry {
+	std::mutex mutex;
+	std::unordered_map<
+		std::wstring,
+		std::shared_ptr<SharedTensorRTDepthBackend>
+	> entries;
+};
+
+SharedTensorRTRegistry& GetSharedTensorRTRegistry() noexcept {
+	// TensorRT sessions intentionally live until process termination. Leaking the
+	// registry also prevents static destruction from waiting for CreateSession.
+	static SharedTensorRTRegistry* registry = new SharedTensorRTRegistry();
+	return *registry;
+}
+
+std::mutex& GetTensorRTInitializationMutex() noexcept {
+	// Never build two TensorRT engines concurrently. This mutex has the same
+	// process lifetime as the registry and is safe for detached initializers.
+	static std::mutex* mutex = new std::mutex();
+	return *mutex;
+}
+
+std::wstring MakeSharedTensorRTKey(const DepthInferenceConfig& config) {
+	return fmt::format(
+		L"{}\n{}\n{}\n{}\n{}x{}\n{}",
+		config.modelPath.native(), config.runtimeDirectory.native(),
+		config.engineCacheDirectory.native(), config.adapterIndex,
+		config.inputWidth, config.inputHeight, config.isNvidiaAdapter);
+}
+
+const char* SharedStateName(SharedDepthBackendState state) noexcept {
+	switch (state) {
+	case SharedDepthBackendState::Initializing: return "initializing";
+	case SharedDepthBackendState::Ready: return "ready";
+	case SharedDepthBackendState::Failed: return "failed";
+	default: return "unknown";
+	}
+}
+
+}
+
+std::shared_ptr<SharedTensorRTDepthBackend>
+AcquireSharedTensorRTDepthBackend(const DepthInferenceConfig& config) {
+	SharedTensorRTRegistry& registry = GetSharedTensorRTRegistry();
+	const std::wstring key = MakeSharedTensorRTKey(config);
+	std::lock_guard lock(registry.mutex);
+	if (const auto it = registry.entries.find(key); it != registry.entries.end()) {
+		Logger::Get().Info(fmt::format(
+			"Frame Guidance reusing shared TensorRT backend input={}x{} state={}",
+			config.inputWidth, config.inputHeight,
+			SharedStateName(it->second->State())));
+		return it->second;
+	}
+
+	auto backend = std::shared_ptr<SharedTensorRTDepthBackend>(
+		new SharedTensorRTDepthBackend(config));
+	registry.entries.emplace(key, backend);
+	Logger::Get().Info(fmt::format(
+		"Frame Guidance creating shared TensorRT backend input={}x{}",
+		config.inputWidth, config.inputHeight));
+	try {
+		std::thread([backend] {
+			const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+			{
+				std::lock_guard initializationLock(
+					GetTensorRTInitializationMutex());
+				backend->Initialize();
+			}
+			if (SUCCEEDED(apartment)) CoUninitialize();
+		}).detach();
+	} catch (...) {
+		backend->_impl->state.store(
+			SharedDepthBackendState::Failed, std::memory_order_release);
+		Logger::Get().Error(
+			"Create shared Frame Guidance TensorRT initializer failed");
+	}
+	return backend;
+}
+
 }
 
 #else
@@ -329,6 +493,8 @@ namespace Magpie {
 
 std::unique_ptr<IDepthInferenceBackend> CreateTensorRTDepthBackend() { return {}; }
 std::unique_ptr<IDepthInferenceBackend> CreateDirectMLDepthBackend() { return {}; }
+std::shared_ptr<SharedTensorRTDepthBackend>
+AcquireSharedTensorRTDepthBackend(const DepthInferenceConfig&) { return {}; }
 
 }
 
