@@ -200,6 +200,7 @@ if (!$SkipBuild) {
         "/p:PatchVersion=$($versionMatch.Groups[3].Value)",
         "/p:VersionString=$Version", "/p:CommitId=$shortCommit",
         "/p:PreferredToolArchitecture=x64",
+        "/p:UseMultiToolTask=false", "/p:CL_MPCount=1",
         "/p:DisablePDB=true", "/p:ReproducibleBuild=true"
     )
 
