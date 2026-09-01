@@ -199,6 +199,7 @@ if (!$SkipBuild) {
         "/p:MinorVersion=$($versionMatch.Groups[2].Value)",
         "/p:PatchVersion=$($versionMatch.Groups[3].Value)",
         "/p:VersionString=$Version", "/p:CommitId=$shortCommit",
+        "/p:PreferredToolArchitecture=x64",
         "/p:DisablePDB=true", "/p:ReproducibleBuild=true"
     )
 
