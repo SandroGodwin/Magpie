@@ -9,56 +9,44 @@
 	<Page.Resources>
 		<DataTemplate x:Key="EffectParametersFlyout"
 		              x:DataType="local:EffectParametersViewModel">
-			<local:SimpleStackPanel Margin="0,0,0,-17">
-				<ItemsControl x:Name="BoolParamsListView"
-				              MaxWidth="260"
-				              Margin="0,0,0,15"
-				              x:Load="{x:Bind HasBoolParams, Mode=OneTime}"
-				              IsTabStop="False"
-				              ItemsSource="{x:Bind BoolParams, Mode=OneTime}">
-					<ItemsControl.ItemTemplate>
-						<DataTemplate x:DataType="local:ScalingModeBoolParameter">
-							<CheckBox MinWidth="0"
-							          Content="{x:Bind Label, Mode=OneTime}"
-							          IsChecked="{x:Bind Value, Mode=TwoWay}" />
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
-				<ItemsControl x:Name="FloatParamsListView"
-				              Width="260"
-				              Margin="0,0,0,12"
-				              x:Load="{x:Bind HasFloatParams, Mode=OneTime}"
-				              IsTabStop="False"
-				              ItemsSource="{x:Bind FloatParams, Mode=OneTime}">
+			<local:SimpleStackPanel Width="260" Margin="0,0,0,-5">
+				<ItemsControl IsTabStop="False"
+				              ItemsSource="{x:Bind Params, Mode=OneTime}">
 					<ItemsControl.ItemsPanel>
 						<ItemsPanelTemplate>
 							<local:SimpleStackPanel Spacing="8" />
 						</ItemsPanelTemplate>
 					</ItemsControl.ItemsPanel>
 					<ItemsControl.ItemTemplate>
-						<DataTemplate x:DataType="local:ScalingModeFloatParameter">
-							<local:SimpleStackPanel>
-								<Grid ColumnSpacing="4">
-									<Grid.ColumnDefinitions>
-										<ColumnDefinition Width="*" />
-										<ColumnDefinition Width="60" />
-									</Grid.ColumnDefinitions>
-									<TextBlock Grid.Column="0"
-									           VerticalAlignment="Center"
-									           Text="{x:Bind Label, Mode=OneTime}"
-									           TextWrapping="WrapWholeWords" />
-									<TextBlock Grid.Column="1"
-									           HorizontalAlignment="Right"
-									           VerticalAlignment="Center"
-									           Text="{x:Bind ValueText, Mode=OneWay}" />
-								</Grid>
-								<Slider HorizontalAlignment="Stretch"
-								        IsThumbToolTipEnabled="False"
-								        Maximum="{x:Bind Maximum, Mode=OneTime}"
-								        Minimum="{x:Bind Minimum, Mode=OneTime}"
-								        StepFrequency="{x:Bind Step, Mode=OneTime}"
-								        Value="{x:Bind Value, Mode=TwoWay}" />
-							</local:SimpleStackPanel>
+						<DataTemplate x:DataType="local:ScalingModeParameter">
+							<Grid Visibility="{x:Bind IsVisible, Mode=OneWay}">
+								<CheckBox MinWidth="0"
+								          Content="{x:Bind Label, Mode=OneTime}"
+								          IsChecked="{x:Bind BooleanValue, Mode=TwoWay}"
+								          Visibility="{x:Bind IsBoolean, Mode=OneTime}" />
+								<local:SimpleStackPanel Visibility="{x:Bind IsFloat, Mode=OneTime}">
+									<Grid ColumnSpacing="4">
+										<Grid.ColumnDefinitions>
+											<ColumnDefinition Width="*" />
+											<ColumnDefinition Width="60" />
+										</Grid.ColumnDefinitions>
+										<TextBlock Grid.Column="0"
+										           VerticalAlignment="Center"
+										           Text="{x:Bind Label, Mode=OneTime}"
+										           TextWrapping="WrapWholeWords" />
+										<TextBlock Grid.Column="1"
+										           HorizontalAlignment="Right"
+										           VerticalAlignment="Center"
+										           Text="{x:Bind ValueText, Mode=OneWay}" />
+									</Grid>
+									<Slider HorizontalAlignment="Stretch"
+									        IsThumbToolTipEnabled="False"
+									        Maximum="{x:Bind Maximum, Mode=OneTime}"
+									        Minimum="{x:Bind Minimum, Mode=OneTime}"
+									        StepFrequency="{x:Bind Step, Mode=OneTime}"
+									        Value="{x:Bind Value, Mode=TwoWay}" />
+								</local:SimpleStackPanel>
+							</Grid>
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>

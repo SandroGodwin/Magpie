@@ -6,6 +6,22 @@
 //!SORT_NAME DLSSNR AI Filter (Experimental)
 
 //!PARAMETER
+//!LABEL Adjust Input Resolution (Reduces DLSSNR Quality)
+//!DEFAULT 0
+//!MIN 0
+//!MAX 1
+//!STEP 1
+int enableInputResolutionScaling;
+
+//!PARAMETER
+//!LABEL Input Resolution (%)
+//!DEFAULT 100
+//!MIN 25
+//!MAX 100
+//!STEP 1
+int inputResolutionPercent;
+
+//!PARAMETER
 //!LABEL NR Preset (0 Default, 1 Preset #1, 2 Preset #2, 3 Preset #3)
 //!DEFAULT 0
 //!MIN 0

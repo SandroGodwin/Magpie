@@ -68,6 +68,11 @@ NativeEffectBackendResult CreateNativeEffectBackend(
 			return it == option.parameters.end() ? defaultValue : it->second;
 		};
 		DLSSNRSettings settings{
+			.enableInputResolutionScaling =
+				getParameter("enableInputResolutionScaling", 0.0f) >= 0.5f,
+			.inputResolutionPercent = static_cast<uint32_t>(std::clamp(
+				static_cast<int>(std::lround(
+					getParameter("inputResolutionPercent", 100.0f))), 25, 100)),
 			.preset = std::clamp(
 				static_cast<int>(std::lround(
 					getParameter("nrPreset", 0.0f))), 0, 3),

@@ -1,10 +1,7 @@
 #include "pch.h"
 #include "EffectParametersViewModel.h"
-#if __has_include("ScalingModeBoolParameter.g.cpp")
-#include "ScalingModeBoolParameter.g.cpp"
-#endif
-#if __has_include("ScalingModeFloatParameter.g.cpp")
-#include "ScalingModeFloatParameter.g.cpp"
+#if __has_include("ScalingModeParameter.g.cpp")
+#include "ScalingModeParameter.g.cpp"
 #endif
 #if __has_include("EffectParametersViewModel.g.cpp")
 #include "EffectParametersViewModel.g.cpp"
@@ -61,11 +58,13 @@ EffectParametersViewModel::EffectParametersViewModel(uint32_t scalingModeIdx, ui
 {
 	ScalingMode& scalingMode = ScalingModesService::Get().GetScalingMode(_scalingModeIdx);
 	_effectInfo = EffectsService::Get().GetEffect(scalingMode.effects[_effectIdx].name);
+	const bool isDlssnr = scalingMode.effects[_effectIdx].name ==
+		L"DLSSNR\\DLSSNR_AI_Filter";
 
 	phmap::flat_hash_map<std::wstring, float>& params = _Data();
 
-	std::vector<IInspectable> boolParams;
-	std::vector<IInspectable> floatParams;
+	std::vector<IInspectable> parameterItems;
+	ScalingModeParameter* inputResolutionToggle = nullptr;
 	for (uint32_t i = 0, size = (uint32_t)_effectInfo->params.size(); i < size; ++i) {
 		const EffectParameterDesc& param = _effectInfo->params[i];
 
@@ -79,7 +78,7 @@ EffectParametersViewModel::EffectParametersViewModel(uint32_t scalingModeIdx, ui
 		
 		if (param.constant.index() == 0) {
 			const EffectConstant<float>& constant = std::get<0>(param.constant);
-			auto floatParamItem = make_self<ScalingModeFloatParameter>(
+			auto paramItem = make_self<ScalingModeParameter>(
 				i,
 				hstring(StrHelper::UTF8ToUTF16(param.label.empty() ? param.name : param.label)),
 				paramValue.has_value() ? *paramValue : constant.defaultValue,
@@ -87,20 +86,25 @@ EffectParametersViewModel::EffectParametersViewModel(uint32_t scalingModeIdx, ui
 				constant.maxValue,
 				constant.step
 			);
-			floatParamItem->PropertyChanged({ this, &EffectParametersViewModel::_ScalingModeFloatParameter_PropertyChanged });
-			floatParams.push_back(*floatParamItem);
+			paramItem->PropertyChanged({
+				this, &EffectParametersViewModel::_ScalingModeParameter_PropertyChanged });
+			parameterItems.push_back(*paramItem);
 		} else {
 			const EffectConstant<int>& constant = std::get<1>(param.constant);
 			if (constant.minValue == 0 && constant.maxValue == 1 && constant.step == 1) {
-				auto boolParamItem = make_self<ScalingModeBoolParameter>(
+				auto paramItem = make_self<ScalingModeParameter>(
 					i,
 					hstring(StrHelper::UTF8ToUTF16(param.label.empty() ? param.name : param.label)),
 					paramValue.has_value() ? std::abs(*paramValue) > FLOAT_EPSILON<float> : (bool)constant.defaultValue
 				);
-				boolParamItem->PropertyChanged({ this, &EffectParametersViewModel::_ScalingModeBoolParameter_PropertyChanged });
-				boolParams.push_back(*boolParamItem);
+				paramItem->PropertyChanged({
+					this, &EffectParametersViewModel::_ScalingModeParameter_PropertyChanged });
+				if (isDlssnr && param.name == "enableInputResolutionScaling") {
+					inputResolutionToggle = paramItem.get();
+				}
+				parameterItems.push_back(*paramItem);
 			} else {
-				auto floatParamItem = make_self<ScalingModeFloatParameter>(
+				auto paramItem = make_self<ScalingModeParameter>(
 					i,
 					hstring(StrHelper::UTF8ToUTF16(param.label.empty() ? param.name : param.label)),
 					paramValue.has_value() ? *paramValue : (float)constant.defaultValue,
@@ -108,16 +112,29 @@ EffectParametersViewModel::EffectParametersViewModel(uint32_t scalingModeIdx, ui
 					(float)constant.maxValue,
 					(float)constant.step
 				);
-				floatParamItem->PropertyChanged({ this, &EffectParametersViewModel::_ScalingModeFloatParameter_PropertyChanged });
-				floatParams.push_back(*floatParamItem);
+				paramItem->PropertyChanged({
+					this, &EffectParametersViewModel::_ScalingModeParameter_PropertyChanged });
+				if (isDlssnr && param.name == "inputResolutionPercent") {
+					_inputResolutionPercent = paramItem;
+				}
+				parameterItems.push_back(*paramItem);
 			}
 		}
 	}
-	if (!boolParams.empty()) {
-		_boolParams = single_threaded_vector(std::move(boolParams));
+	if (_inputResolutionPercent) {
+		_inputResolutionPercent->IsVisible(
+			inputResolutionToggle && inputResolutionToggle->BooleanValue());
 	}
-	if (!floatParams.empty()) {
-		_floatParams = single_threaded_vector(std::move(floatParams));
+	if (!isDlssnr) {
+		std::stable_partition(
+			parameterItems.begin(), parameterItems.end(),
+			[](const IInspectable& item) {
+				return get_self<ScalingModeParameter>(
+					item.as<Magpie::ScalingModeParameter>())->IsBoolean();
+			});
+	}
+	if (!parameterItems.empty()) {
+		_params = single_threaded_vector(std::move(parameterItems));
 	}
 }
 
@@ -127,34 +144,26 @@ bool EffectParametersViewModel::_IsRemoved() const noexcept {
 		_effectIdx == std::numeric_limits<uint32_t>::max();
 }
 
-void EffectParametersViewModel::_ScalingModeBoolParameter_PropertyChanged(
+void EffectParametersViewModel::_ScalingModeParameter_PropertyChanged(
 	IInspectable const& sender,
 	PropertyChangedEventArgs const& args
 ) {
-	if (_IsRemoved() || args.PropertyName() != L"Value") {
+	if (_IsRemoved() ||
+		(args.PropertyName() != L"Value" &&
+		 args.PropertyName() != L"BooleanValue")) {
 		return;
 	}
 
-	ScalingModeBoolParameter* boolParamImpl =
-		get_self<ScalingModeBoolParameter>(sender.try_as<Magpie::ScalingModeBoolParameter>());
-	const std::string& effectName = _effectInfo->params[boolParamImpl->Index()].name;
-	_Data()[StrHelper::UTF8ToUTF16(effectName)] = (float)boolParamImpl->Value();
-
-	LazySaveAppSettings();
-}
-
-void EffectParametersViewModel::_ScalingModeFloatParameter_PropertyChanged(
-	IInspectable const& sender,
-	PropertyChangedEventArgs const& args
-) {
-	if (_IsRemoved() || args.PropertyName() != L"Value") {
-		return;
+	ScalingModeParameter* paramImpl = get_self<ScalingModeParameter>(
+		sender.try_as<Magpie::ScalingModeParameter>());
+	const std::string& effectName = _effectInfo->params[paramImpl->Index()].name;
+	_Data()[StrHelper::UTF8ToUTF16(effectName)] = paramImpl->IsBoolean() ?
+		static_cast<float>(paramImpl->BooleanValue()) :
+		static_cast<float>(paramImpl->Value());
+	if (effectName == "enableInputResolutionScaling" &&
+		_inputResolutionPercent) {
+		_inputResolutionPercent->IsVisible(paramImpl->BooleanValue());
 	}
-
-	ScalingModeFloatParameter* floatParamImpl =
-		get_self<ScalingModeFloatParameter>(sender.try_as<Magpie::ScalingModeFloatParameter>());
-	const std::string& effectName = _effectInfo->params[floatParamImpl->Index()].name;
-	_Data()[StrHelper::UTF8ToUTF16(effectName)] = (float)floatParamImpl->Value();
 
 	LazySaveAppSettings();
 }
@@ -164,7 +173,7 @@ phmap::flat_hash_map<std::wstring, float>& EffectParametersViewModel::_Data() co
 	return scalingMode.effects[_effectIdx].parameters;
 }
 
-hstring ScalingModeFloatParameter::ValueText() const noexcept {
+hstring ScalingModeParameter::ValueText() const noexcept {
 	return App::DoubleFormatter().FormatDouble(_value);
 }
 

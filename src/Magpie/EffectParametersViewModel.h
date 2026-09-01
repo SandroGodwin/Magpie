@@ -1,7 +1,6 @@
 #pragma once
 #include "EffectParametersViewModel.g.h"
-#include "ScalingModeBoolParameter.g.h"
-#include "ScalingModeFloatParameter.g.h"
+#include "ScalingModeParameter.g.h"
 #include <parallel_hashmap/phmap.h>
 
 namespace Magpie {
@@ -10,42 +9,51 @@ struct EffectInfo;
 
 namespace winrt::Magpie::implementation {
 
-struct ScalingModeBoolParameter : ScalingModeBoolParameterT<ScalingModeBoolParameter>,
-                                  wil::notify_property_changed_base<ScalingModeBoolParameter> {
-	ScalingModeBoolParameter(uint32_t index, const hstring& label, bool initValue)
-		: _index(index), _label(box_value(label)), _value(initValue) {
-	}
-	uint32_t Index() const noexcept {
-		return _index;
-	}
+struct ScalingModeParameter : ScalingModeParameterT<ScalingModeParameter>,
+		wil::notify_property_changed_base<ScalingModeParameter> {
+	ScalingModeParameter(uint32_t index, hstring label, bool initValue)
+		: _index(index), _label(std::move(label)), _isBoolean(true),
+		_value(initValue ? 1.0 : 0.0) {}
 
-	bool Value() const noexcept {
-		return _value;
-	}
-
-	void Value(bool value) {
-		_value = value;
-		RaisePropertyChanged(L"Value");
-	}
-
-	IInspectable Label() const noexcept {
-		return _label;
-	}
-
-private:
-	const uint32_t _index;
-	IInspectable _label;
-	bool _value;
-};
-
-struct ScalingModeFloatParameter : ScalingModeFloatParameterT<ScalingModeFloatParameter>,
-                                   wil::notify_property_changed_base<ScalingModeFloatParameter> {
-	ScalingModeFloatParameter(uint32_t index, const hstring& label, float initValue, float minimum, float maximum, float step)
-		: _index(index), _label(label), _minimum(minimum), _maximum(maximum), _step(step), _value(initValue) {
-	}
+	ScalingModeParameter(
+		uint32_t index,
+		hstring label,
+		float initValue,
+		float minimum,
+		float maximum,
+		float step
+	) : _index(index), _label(std::move(label)), _minimum(minimum),
+		_maximum(maximum), _step(step), _value(initValue) {}
 
 	uint32_t Index() const noexcept {
 		return _index;
+	}
+
+	bool IsBoolean() const noexcept {
+		return _isBoolean;
+	}
+
+	bool IsFloat() const noexcept {
+		return !_isBoolean;
+	}
+
+	bool IsVisible() const noexcept {
+		return _isVisible;
+	}
+
+	void IsVisible(bool value) {
+		if (_isVisible == value) return;
+		_isVisible = value;
+		RaisePropertyChanged(L"IsVisible");
+	}
+
+	bool BooleanValue() const noexcept {
+		return _value != 0.0;
+	}
+
+	void BooleanValue(bool value) {
+		_value = value ? 1.0 : 0.0;
+		RaisePropertyChanged(L"BooleanValue");
 	}
 
 	double Value() const noexcept {
@@ -79,9 +87,11 @@ struct ScalingModeFloatParameter : ScalingModeFloatParameterT<ScalingModeFloatPa
 private:
 	const uint32_t _index;
 	const hstring _label;
-	const double _minimum;
-	const double _maximum;
-	const double _step;
+	const bool _isBoolean = false;
+	bool _isVisible = true;
+	const double _minimum = 0.0;
+	const double _maximum = 1.0;
+	const double _step = 1.0;
 	double _value;
 };
 
@@ -104,33 +114,22 @@ struct EffectParametersViewModel : EffectParametersViewModelT<EffectParametersVi
 		_effectIdx = value;
 	}
 
-	IVector<IInspectable> BoolParams() const noexcept {
-		return _boolParams;
-	}
-
-	IVector<IInspectable> FloatParams() const noexcept {
-		return _floatParams;
-	}
-
-	bool HasBoolParams() const noexcept {
-		return _boolParams != nullptr;
-	}
-
-	bool HasFloatParams() const noexcept {
-		return _floatParams != nullptr;
+	IVector<IInspectable> Params() const noexcept {
+		return _params;
 	}
 
 private:
 	bool _IsRemoved() const noexcept;
 
-	void _ScalingModeBoolParameter_PropertyChanged(IInspectable const& sender, PropertyChangedEventArgs const& args);
-
-	void _ScalingModeFloatParameter_PropertyChanged(IInspectable const& sender, PropertyChangedEventArgs const& args);
+	void _ScalingModeParameter_PropertyChanged(
+		IInspectable const& sender,
+		PropertyChangedEventArgs const& args
+	);
 
 	phmap::flat_hash_map<std::wstring, float>& _Data() const;
 
-	IVector<IInspectable> _boolParams{ nullptr };
-	IVector<IInspectable> _floatParams{ nullptr };
+	IVector<IInspectable> _params{ nullptr };
+	com_ptr<ScalingModeParameter> _inputResolutionPercent;
 
 	uint32_t _scalingModeIdx;
 	uint32_t _effectIdx;
