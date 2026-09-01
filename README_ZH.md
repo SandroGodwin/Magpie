@@ -105,6 +105,10 @@ XeSSFG 默认使用跨厂商 x2 Zero-MV 路径，目前没有接入 DLSS 使用�
 - 如果效果文件或 DLL 缺失，请重新完整解压 Release，不要只复制 `Magpie.exe`。
 - 报告问题时请附上 Magpie 版本、GPU、驱动版本、效果链、输入/输出分辨率和日志。
 
+## 贡献者
+
+- [HexBen123](https://github.com/HexBen123) — 深度估算性能优化与 TensorRT 集成指导。
+
 ## 系统要求与许可
 
 - Windows 10 v1903+ 或 Windows 11

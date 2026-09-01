@@ -105,6 +105,10 @@ The tool requires administrator access and affects other programs using NGX. Dis
 - If an effect or DLL is missing, extract the complete Release again instead of copying only `Magpie.exe`.
 - Include the Magpie version, GPU, driver, effect chain, input/output resolution, and log when reporting a problem.
 
+## Contributors
+
+- [HexBen123](https://github.com/HexBen123) — Depth-estimation performance optimization and TensorRT integration guidance.
+
 ## Requirements and license
 
 - Windows 10 v1903+ or Windows 11
